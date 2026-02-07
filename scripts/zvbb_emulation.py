@@ -1,3 +1,18 @@
+from rie_generator import (
+    Operation,
+    OperationDesciptor,
+    NodeFormatDescriptor,
+    NodeFormatType,
+    Immediate,
+    Input,
+    get_scalar_format,
+    element_size,
+    EltType,
+    LMULType,
+    OperationType,
+    generate_intrinsic_prototype,
+    generate_intrinsic_from_operation
+)
 
 # description of vector rotation emulation 
 def rotate_left(elts: Node, rot_amount: Node, vl: Node) -> Node:
@@ -66,15 +81,21 @@ def rotate_right(elts: Node, rot_amount: Node, vl: Node) -> Node:
     return Operation(elts.node_format, or_desc, left_shift, right_shift, vl)
 
 
+vl_type = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
+vl = Input(vl_type, 2, name="vl")
+
+print("#include <stdint.h>\n")
+print("#include <riscv_vector.h>\n")
+print("#include <stddef.h>\n")
+
 for elt_type in [EltType.U8, EltType.U16, EltType.U32, EltType.U64]:
     uint_t = NodeFormatDescriptor(NodeFormatType.SCALAR, elt_type, lmul_type=None)
+    rhs_vx = Input(uint_t, 1)
     for lmul in [LMULType.M1, LMULType.M2, LMULType.M4, LMULType.M8]:
         vuintm_t = NodeFormatDescriptor(NodeFormatType.VECTOR, elt_type, lmul)
         
         lhs = Input(vuintm_t, 0)
         rhs = Input(vuintm_t, 1)
-        rhs_vx = Input(uint_t, 1)
-        vl = Input(vl_type, 2, name="vl")
 
         vuintm_vror_vv_prototype = Operation(
             vuintm_t,
