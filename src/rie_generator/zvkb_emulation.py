@@ -1,7 +1,7 @@
 """
-ZVBB (Vector Basic Bit-manipulation) instruction emulation generator.
+Zvkb (Vector Bit-manipulation) instruction emulation generator.
 
-This module generates C code for emulating RISC-V Zvbb vector rotate
+This module generates C code for emulating RISC-V Zvkb vector rotate
 instructions (vror, vrol) using standard RVV intrinsics.
 """
 
@@ -91,8 +91,8 @@ def rotate_right(elts: Node, rot_amount: Node, vl: Node) -> Node:
     return Operation(elts.node_format, or_desc, left_shift, right_shift, vl)
 
 
-def generate_zvbb_emulation():
-    """Generate all ZVBB rotate instruction emulations."""
+def generate_zvkb_emulation():
+    """Generate Zvkb instruction emulations."""
     output = []
     
     vl_type = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
@@ -158,8 +158,8 @@ def generate_zvbb_emulation():
 
 
 def main():
-    """CLI entry point for generating ZVBB emulation code."""
-    print(generate_zvbb_emulation())
+    """CLI entry point for generating Zvkb emulation code."""
+    print(generate_zvkb_emulation())
 
 
 if __name__ == "__main__":

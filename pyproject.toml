@@ -18,7 +18,7 @@ keywords = [
     "intrinsics",
     "emulation",
     "code-generation",
-    "zvbb"
+    "zvkb"
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -50,7 +50,7 @@ Repository = "https://github.com/nibrunie/rvv-intrinsic-emulation"
 Issues = "https://github.com/nibrunie/rvv-intrinsic-emulation/issues"
 
 [project.scripts]
-rie-zvbb = "rie_generator.zvbb_emulation:main"
+rie-zvkb = "rie_generator.zvkb_emulation:main"
 rie-zvdot4a8i = "rie_generator.zvdot4a8i_emulation:main"
 
 [tool.setuptools.packages.find]
