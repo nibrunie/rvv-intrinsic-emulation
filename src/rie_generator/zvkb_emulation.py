@@ -91,8 +91,16 @@ def rotate_right(elts: Node, rot_amount: Node, vl: Node) -> Node:
     return Operation(elts.node_format, or_desc, left_shift, right_shift, vl)
 
 
+def and_not(op0: Node, op1: Node, vl: Node) -> Node:
+    """Generate vector andn (and not) operation RVV 1.0 operation only."""
+    not_desc = OperationDesciptor(OperationType.NOT)
+    not_op1 = Operation(op1.node_format, not_desc, op1, vl)
+    and_desc = OperationDesciptor(OperationType.AND)
+    return Operation(op0.node_format, and_desc, op0, not_op1, vl)
+    
+
 def generate_zvkb_emulation():
-    """Generate Zvkb instruction emulations."""
+    """Generate all ZVKb rotate instruction emulations."""
     output = []
     
     vl_type = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
@@ -147,11 +155,38 @@ def generate_zvkb_emulation():
             )
             vuintm_vrol_vx_emulation = rotate_left(lhs, rhs_vx, vl)
 
+            vuintm_vandn_vv_prototype = Operation(
+                vuintm_t,
+                OperationDesciptor(OperationType.ANDN),
+                lhs,
+                rhs,
+                vl
+            )
+            vuintm_vandn_vv_emulation = and_not(lhs, rhs, vl)
+
+            vuintm_vandn_vx_prototype = Operation(
+                vuintm_t,
+                OperationDesciptor(OperationType.ANDN),
+                lhs,
+                rhs_vx,
+                vl
+            )
+            vuintm_vandn_vx_emulation = and_not(lhs, rhs_vx, vl)
+
+            zvkb_insns = [
+                (vuintm_vror_vv_prototype, vuintm_vror_vv_emulation),
+                (vuintm_vror_vx_prototype, vuintm_vror_vx_emulation),
+                (vuintm_vrol_vv_prototype, vuintm_vrol_vv_emulation),
+                (vuintm_vrol_vx_prototype, vuintm_vrol_vx_emulation),
+                (vuintm_vandn_vv_prototype, vuintm_vandn_vv_emulation),
+                (vuintm_vandn_vx_prototype, vuintm_vandn_vx_emulation)
+            ]
+
             output.append("// prototypes")
-            for prototype in [vuintm_vror_vv_prototype, vuintm_vror_vx_prototype, vuintm_vrol_vv_prototype, vuintm_vrol_vx_prototype]:
+            for prototype in [p for p, e in zvkb_insns]:
                 output.append(generate_intrinsic_prototype(prototype))
             output.append("\n// intrinsics")
-            for prototype, emulation in [(vuintm_vror_vv_prototype, vuintm_vror_vv_emulation), (vuintm_vror_vx_prototype, vuintm_vror_vx_emulation), (vuintm_vrol_vv_prototype, vuintm_vrol_vv_emulation), (vuintm_vrol_vx_prototype, vuintm_vrol_vx_emulation)]:
+            for prototype, emulation in zvkb_insns:
                 output.append(generate_intrinsic_from_operation(prototype, emulation))
     
     return "\n".join(output)

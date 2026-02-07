@@ -62,6 +62,7 @@ class OperationType(Enum):
     RSUB = auto()
     OR = auto()
     AND = auto()
+    ANDN = auto()
     XOR = auto()
     MUL = auto()
     DIV = auto()
@@ -101,10 +102,14 @@ class OperationType(Enum):
             return "or"
         elif op_type == OperationType.AND:
             return "and"
+        elif op_type == OperationType.ANDN:
+            return "andn"
+        elif op_type == OperationType.NOT:
+            return "not"
         elif op_type == OperationType.XOR:
             return "xor"
         else:
-            raise ValueError("Invalid operation type")
+            raise ValueError(f"Invalid operation type: {op_type}")
 
 class OperationDesciptor:
     def __init__(self, op_type):
