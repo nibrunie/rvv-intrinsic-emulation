@@ -74,6 +74,7 @@ class OperationType(Enum):
     LE = auto()
     GT = auto()
     GE = auto()
+    BREV8 = auto()
 
     INPUT = auto()
     IMMEDIATE = auto()
@@ -108,6 +109,8 @@ class OperationType(Enum):
             return "not"
         elif op_type == OperationType.XOR:
             return "xor"
+        elif op_type == OperationType.BREV8:
+            return "brev8"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 

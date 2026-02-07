@@ -92,15 +92,43 @@ def rotate_right(elts: Node, rot_amount: Node, vl: Node) -> Node:
 
 
 def and_not(op0: Node, op1: Node, vl: Node) -> Node:
-    """Generate vector andn (and not) operation RVV 1.0 operation only."""
+    """Generate vector andn (and not) using operation RVV 1.0 operation only."""
     not_desc = OperationDesciptor(OperationType.NOT)
     not_op1 = Operation(op1.node_format, not_desc, op1, vl)
     and_desc = OperationDesciptor(OperationType.AND)
     return Operation(op0.node_format, and_desc, op0, not_op1, vl)
-    
+
+
+def brev8(op0: Node, vl: Node) -> Node:
+    """Generate vector brev8 (bit reverse in bytes) using operation RVV 1.0 operation only."""
+    elt_size = element_size(op0.node_format.elt_type)
+    mask_elt_size = (1 << (elt_size)) - 1
+    mask_4bits = Immediate(op0.node_format, 0x0F0F0F0F0F0F0F0F & mask_elt_size)
+    # inversing nimbles in byte
+    op0_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0, mask_4bits, vl)
+    op0_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 4), vl)
+    op0_hi_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 4), vl)
+    op0_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_hi_shift, mask_4bits, vl)
+    op0_inv_nimbles = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
+    # inversing 2-bit in nimbles
+    mask_2bits = Immediate(op0.node_format, 0x3333333333333333 & mask_elt_size)
+    op0_2bits_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_inv_nimbles, mask_2bits, vl)
+    op0_2bits_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_2bits_lo, Immediate(get_scalar_format(op0.node_format), 2), vl)
+    op0_2bits_hi_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0_inv_nimbles, Immediate(get_scalar_format(op0.node_format), 2), vl)
+    op0_2bits_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_2bits_hi_shift, mask_2bits, vl)
+    op0_inv_2bits = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_2bits_lo_shift, op0_2bits_hi_masked, vl)
+    # inversing 1-bit in nimbles
+    mask_1bit = Immediate(op0.node_format, 0x5555555555555555 & mask_elt_size)
+    op0_1bit_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_inv_2bits, mask_1bit, vl)
+    op0_1bit_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_1bit_lo, Immediate(get_scalar_format(op0.node_format), 1), vl)
+    op0_1bit_hi_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0_inv_2bits, Immediate(get_scalar_format(op0.node_format), 1), vl)
+    op0_1bit_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_1bit_hi_shift, mask_1bit, vl)
+    op0_inv_1bit = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_1bit_lo_shift, op0_1bit_hi_masked, vl)
+    return op0_inv_1bit
+
 
 def generate_zvkb_emulation():
-    """Generate all ZVKb rotate instruction emulations."""
+    """Generate all Zvkb rotate instruction emulations."""
     output = []
     
     vl_type = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
@@ -173,13 +201,22 @@ def generate_zvkb_emulation():
             )
             vuintm_vandn_vx_emulation = and_not(lhs, rhs_vx, vl)
 
+            vuintm_brev8_v_prototype = Operation(
+                vuintm_t,
+                OperationDesciptor(OperationType.BREV8),
+                lhs,
+                vl
+            )
+            vuintm_brev8_v_emulation = brev8(lhs, vl)
+
             zvkb_insns = [
                 (vuintm_vror_vv_prototype, vuintm_vror_vv_emulation),
                 (vuintm_vror_vx_prototype, vuintm_vror_vx_emulation),
                 (vuintm_vrol_vv_prototype, vuintm_vrol_vv_emulation),
                 (vuintm_vrol_vx_prototype, vuintm_vrol_vx_emulation),
                 (vuintm_vandn_vv_prototype, vuintm_vandn_vv_emulation),
-                (vuintm_vandn_vx_prototype, vuintm_vandn_vx_emulation)
+                (vuintm_vandn_vx_prototype, vuintm_vandn_vx_emulation),
+                (vuintm_brev8_v_prototype, vuintm_brev8_v_emulation)
             ]
 
             output.append("// prototypes")
