@@ -280,9 +280,11 @@ def generate_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -
         return f"{op.value}"
     else:
         assert op.node_type == NodeType.OPERATION
-        # generate temp variable
-        if op.node_format.node_format_type == NodeFormatType.VECTOR or any(arg.node_format.node_format_type == NodeFormatType.VECTOR for arg in op.args):
+        if op in memoization_map:
+            return memoization_map[op]
+        elif op.node_format.node_format_type == NodeFormatType.VECTOR or any(arg.node_format.node_format_type == NodeFormatType.VECTOR for arg in op.args):
             call_op = f"{generate_intrinsic_name(op)}({', '.join([generate_operation(code, arg, memoization_map) for arg in op.args])})"
+            # generate temp variable
             temp_var = code.allocate_new_free_var()
             memoization_map[op] = temp_var
             code.append(f"  {generate_node_format_type_string(op.node_format)} {temp_var} = {call_op};\n")
