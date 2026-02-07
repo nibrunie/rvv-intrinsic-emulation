@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rie-generator"
+version = "0.1.0"
+description = "RISC-V Vector Intrinsic Emulation Generator - Generate C code for emulating RISC-V vector instructions"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Nicolas"}
+]
+keywords = [
+    "risc-v",
+    "vector",
+    "intrinsics",
+    "emulation",
+    "code-generation",
+    "zvbb"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: System :: Hardware",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "isort>=5.0",
+    "mypy>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/nibrunie/rvv-intrinsic-emulation"
+Repository = "https://github.com/nibrunie/rvv-intrinsic-emulation"
+Issues = "https://github.com/nibrunie/rvv-intrinsic-emulation/issues"
+
+[project.scripts]
+rie-zvbb = "rie_generator.zvbb_emulation:main"
+rie-zvdot4a8i = "rie_generator.zvdot4a8i_emulation:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
