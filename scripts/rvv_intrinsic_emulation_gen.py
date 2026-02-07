@@ -2,7 +2,7 @@ from enum import Enum, auto
 
 
 # Enum class of integer types
-class IntType(Enum):
+class EltType(Enum):
     U8 = auto()
     U16 = auto()
     U32 = auto()
@@ -11,6 +11,7 @@ class IntType(Enum):
     S16 = auto()
     S32 = auto()
     S64 = auto()
+    SIZE_T = auto()
     PLACEHOLDER = auto()
 
 class LMULType(Enum):
@@ -114,9 +115,10 @@ class Immediate(Node):
         self.node_type = NodeType.IMMEDIATE
 
 class Input(Node):
-    def __init__(self, node_format: NodeFormatDescriptor, index: int):
+    def __init__(self, node_format: NodeFormatDescriptor, index: int, name: str = None  ):
         self.node_format = node_format
         self.index = index
+        self.name = name
         self.node_type = NodeType.INPUT
 
 class Operation(Node):
@@ -130,6 +132,7 @@ class NodeFormatType(Enum):
     VECTOR = auto()
     SCALAR = auto()
     IMMEDIATE = auto()
+    VECTOR_LENGTH = auto()
 
 class NodeType(Enum):
     INPUT = auto()
@@ -138,19 +141,19 @@ class NodeType(Enum):
     UNDEFINED = auto()
 
 class NodeFormatDescriptor:
-    def __init__(self, node_format_type: NodeFormatType, elt_type: IntType, lmul_type: LMULType=None):
+    def __init__(self, node_format_type: NodeFormatType, elt_type: EltType, lmul_type: LMULType=None):
         self.node_format_type = node_format_type
         self.elt_type = elt_type
         self.lmul_type = lmul_type
 
-def element_size(elt_type: IntType) -> int:
-    if elt_type == IntType.U8 or elt_type == IntType.S8:
+def element_size(elt_type: EltType) -> int:
+    if elt_type == EltType.U8 or elt_type == EltType.S8:
         return 8
-    elif elt_type == IntType.U16 or elt_type == IntType.S16:
+    elif elt_type == EltType.U16 or elt_type == EltType.S16:
         return 16
-    elif elt_type == IntType.U32 or elt_type == IntType.S32:
+    elif elt_type == EltType.U32 or elt_type == EltType.S32:
         return 32
-    elif elt_type == IntType.U64 or elt_type == IntType.S64:
+    elif elt_type == EltType.U64 or elt_type == EltType.S64:
         return 64
     else:
         raise ValueError("Invalid integer type")
@@ -159,81 +162,103 @@ def get_scalar_format(node_format: NodeFormatDescriptor) -> NodeFormatDescriptor
     return NodeFormatDescriptor(NodeFormatType.SCALAR, node_format.elt_type, None)
 
 # description of vector rotation emulation 
-def rotate_left(elts: Node, rot_amount: Node) -> Node:
+def rotate_left(elts: Node, rot_amount: Node, vl: Node) -> Node:
     left_shift = Operation(
         elts.node_format,
         OperationDesciptor(OperationType.SLL),
-        elts, rot_amount
+        elts, rot_amount, vl
     )
-    right_shift = Operation(
-        elts.node_format,
-        OperationDesciptor(OperationType.SRL),
-        elts,
-        Operation(
+    if rot_amount.node_format.node_format_type == NodeFormatType.SCALAR:
+        rsub = Operation(
             rot_amount.node_format,
             OperationDesciptor(OperationType.RSUB),
             rot_amount,
             Immediate(get_scalar_format(rot_amount.node_format), element_size(elts.node_format.elt_type))
-        )   
+        )
+    else:
+        rsub = Operation(
+            rot_amount.node_format,
+            OperationDesciptor(OperationType.RSUB),
+            rot_amount,
+            Immediate(get_scalar_format(rot_amount.node_format), element_size(elts.node_format.elt_type)),
+            vl
+        )
+    right_shift = Operation(
+        elts.node_format,
+        OperationDesciptor(OperationType.SRL),
+        elts,
+        rsub,
+        vl   
     )
      
     or_desc = OperationDesciptor(OperationType.OR)
-    return Operation(elts.node_format, or_desc, left_shift, right_shift)
+    return Operation(elts.node_format, or_desc, left_shift, right_shift, vl)
 
 # description of vector rotation emulation 
-def rotate_right(elts: Node, rot_amount: Node) -> Node:
+def rotate_right(elts: Node, rot_amount: Node, vl: Node) -> Node:
     right_shift = Operation(
         elts.node_format,
         OperationDesciptor(OperationType.SRL),
-        elts, rot_amount
+        elts, rot_amount, vl
     )
-    left_shift = Operation(
-        elts.node_format,
-        OperationDesciptor(OperationType.SLL),
-        elts,
-        Operation(
+    if rot_amount.node_format.node_format_type == NodeFormatType.SCALAR:
+        rsub = Operation(
             rot_amount.node_format,
             OperationDesciptor(OperationType.RSUB),
             rot_amount,
             Immediate(get_scalar_format(rot_amount.node_format), element_size(elts.node_format.elt_type))
-        )   
+        )
+    else:
+        rsub = Operation(
+            rot_amount.node_format,
+            OperationDesciptor(OperationType.RSUB),
+            rot_amount,
+            Immediate(get_scalar_format(rot_amount.node_format), element_size(elts.node_format.elt_type)),
+            vl
+        )
+    left_shift = Operation(
+        elts.node_format,
+        OperationDesciptor(OperationType.SLL),
+        elts,
+        rsub,
+        vl
     )
      
     or_desc = OperationDesciptor(OperationType.OR)
-    return Operation(elts.node_format, or_desc, left_shift, right_shift)
+    return Operation(elts.node_format, or_desc, left_shift, right_shift, vl)
 
-def int_type_to_scalar_type(int_type: IntType) -> str:
-    if int_type == IntType.U8:
+def int_type_to_scalar_type(int_type: EltType) -> str:
+    if int_type == EltType.U8:
         return "uint8_t"
-    elif int_type == IntType.S8:
+    elif int_type == EltType.S8:
         return "int8_t"
-    elif int_type == IntType.U16:
+    elif int_type == EltType.U16:
         return "uint16_t"
-    elif int_type == IntType.S16:
+    elif int_type == EltType.S16:
         return "int16_t"
-    elif int_type == IntType.U32:
+    elif int_type == EltType.U32:
         return "uint32_t"
-    elif int_type == IntType.S32:
+    elif int_type == EltType.S32:
         return "int32_t"
-    elif int_type == IntType.U64:
+    elif int_type == EltType.U64:
         return "uint64_t"
     else:
         raise ValueError("Invalid integer type")
 
-def int_type_to_vector_type(int_type: IntType, lmul_type: LMULType) -> str:
-    if int_type == IntType.U8:
+def int_type_to_vector_type(int_type: EltType, lmul_type: LMULType) -> str:
+    if int_type == EltType.U8:
         return f"vuint8{LMULType.to_string(lmul_type)}_t"
-    elif int_type == IntType.S8:
+    elif int_type == EltType.S8:
         return f"vint8{LMULType.to_string(lmul_type)}_t"
-    elif int_type == IntType.U16:
+    elif int_type == EltType.U16:
         return f"vuint16{LMULType.to_string(lmul_type)}_t"
-    elif int_type == IntType.S16:
+    elif int_type == EltType.S16:
         return f"vint16{LMULType.to_string(lmul_type)}_t"
-    elif int_type == IntType.U32:
+    elif int_type == EltType.U32:
         return f"vuint32{LMULType.to_string(lmul_type)}_t"
-    elif int_type == IntType.S32:
+    elif int_type == EltType.S32:
         return f"vint32{LMULType.to_string(lmul_type)}_t"
-    elif int_type == IntType.U64:
+    elif int_type == EltType.U64:
         return f"vuint64{LMULType.to_string(lmul_type)}_t"
     else:
         raise ValueError("Invalid integer type")
@@ -245,19 +270,21 @@ def generate_node_format_type_string(node_format: NodeFormatDescriptor) -> str:
         return int_type_to_scalar_type(node_format.elt_type)
     elif node_format.node_format_type == NodeFormatType.IMMEDIATE:
         return int_type_to_scalar_type(node_format.elt_type)
+    elif node_format.node_format_type == NodeFormatType.VECTOR_LENGTH:
+        return "size_t"
     else:
         raise ValueError("Invalid operand type")
 
 def generate_intrinsic_type_tag(node_format: NodeFormatDescriptor) -> str:
     type_tag = {
-        IntType.U8: "u8",
-        IntType.S8: "i8",
-        IntType.U16: "u16",
-        IntType.S16: "i16",
-        IntType.U32: "u32",
-        IntType.S32: "i32",
-        IntType.U64: "u64",
-        IntType.S64: "i64",
+        EltType.U8: "u8",
+        EltType.S8: "i8",
+        EltType.U16: "u16",
+        EltType.S16: "i16",
+        EltType.U32: "u32",
+        EltType.S32: "i32",
+        EltType.U64: "u64",
+        EltType.S64: "i64",
     }
     return f"{type_tag[node_format.elt_type]}{LMULType.to_string(node_format.lmul_type)}"
 
@@ -375,16 +402,27 @@ def generate_intrinsic_from_operation(prototype: Operation, emulation: Operation
     # generate body
     dst_type = generate_node_format_type_string(prototype.node_format)
     src_types = [generate_node_format_type_string(arg.node_format) for arg in prototype.args]
-    src_list = [f"{src_type} op{i}" for i, src_type in enumerate(src_types)]
-    memoisation_map = {src: f"op{i}" for i, src in enumerate(prototype.args)}
+    def get_src_name(src: Node) -> str:
+        assert src.node_type == NodeType.INPUT
+        if src.name is not None:
+            return src.name
+        else:
+            return f"op{src.index}"
+    src_list = [f"{src_type} {get_src_name(src)}" for src, src_type in zip(prototype.args, src_types)]
+    memoisation_map = {src: get_src_name(src) for src in prototype.args}
     header = f"{dst_type} {intrinsic_name}({', '.join(src_list)}) {{\n"
     code = CodeObject("")
     result = generate_operation(code, emulation, memoisation_map)
     footer = f"  return {result};\n}}"
     return header + code.code + footer
 
+vl_type = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
+
+print("#include <stdint.h>\n")
+print("#include <riscv_vector.h>\n")
+print("#include <stddef.h>\n")
     
-for elt_type in [IntType.U8, IntType.U16, IntType.U32, IntType.U64]:
+for elt_type in [EltType.U8, EltType.U16, EltType.U32, EltType.U64]:
     uint_t = NodeFormatDescriptor(NodeFormatType.SCALAR, elt_type, lmul_type=None)
     for lmul in [LMULType.M1, LMULType.M2, LMULType.M4, LMULType.M8]:
         vuintm_t = NodeFormatDescriptor(NodeFormatType.VECTOR, elt_type, lmul)
@@ -392,38 +430,43 @@ for elt_type in [IntType.U8, IntType.U16, IntType.U32, IntType.U64]:
         lhs = Input(vuintm_t, 0)
         rhs = Input(vuintm_t, 1)
         rhs_vx = Input(uint_t, 1)
+        vl = Input(vl_type, 2, name="vl")
 
         vuintm_vror_vv_prototype = Operation(
             vuintm_t,
             OperationDesciptor(OperationType.ROR),
             lhs,
-            rhs
+            rhs,
+            vl
         )
-        vuintm_vror_vv_emulation = rotate_right(lhs, rhs)
+        vuintm_vror_vv_emulation = rotate_right(lhs, rhs, vl)
 
         vuintm_vror_vx_prototype = Operation(
             vuintm_t,
             OperationDesciptor(OperationType.ROR),
             lhs,
-            rhs_vx
+            rhs_vx,
+            vl
         )
-        vuintm_vror_vx_emulation = rotate_right(lhs, rhs_vx)
+        vuintm_vror_vx_emulation = rotate_right(lhs, rhs_vx, vl)
 
         vuintm_vrol_vv_prototype = Operation(
             vuintm_t,
             OperationDesciptor(OperationType.ROL),
             lhs,
-            rhs
+            rhs,
+            vl
         )
-        vuintm_vrol_vv_emulation = rotate_left(lhs, rhs)
+        vuintm_vrol_vv_emulation = rotate_left(lhs, rhs, vl)
 
         vuintm_vrol_vx_prototype = Operation(
             vuintm_t,
             OperationDesciptor(OperationType.ROL),
             lhs,
-            rhs_vx
+            rhs_vx,
+            vl
         )
-        vuintm_vrol_vx_emulation = rotate_left(lhs, rhs_vx)
+        vuintm_vrol_vx_emulation = rotate_left(lhs, rhs_vx, vl)
 
         print("// prototypes")
         for prototype in [vuintm_vror_vv_prototype, vuintm_vror_vx_prototype, vuintm_vrol_vv_prototype, vuintm_vrol_vx_prototype]:
