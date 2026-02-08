@@ -126,6 +126,38 @@ def brev8(op0: Node, vl: Node) -> Node:
     op0_inv_1bit = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_1bit_lo_shift, op0_1bit_hi_masked, vl)
     return op0_inv_1bit
 
+def rev8(op0: Node, vl: Node) -> Node:
+    """ Emulate byte reversal in element using only base operations """
+    elt_size = element_size(op0.node_format.elt_type)
+    mask_elt_size = (1 << (elt_size)) - 1
+    # word swap
+    if elt_size > 32:
+        word_mask = Immediate(op0.node_format, 0xffffffff & mask_elt_size)
+        op0_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0, word_mask, vl)
+        op0_hi = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 32), vl)
+        op0_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 32), vl)
+        op0_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_hi, word_mask, vl)
+        op0 = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
+    
+    # half word swap
+    if elt_size > 16:
+        half_word_mask = Immediate(op0.node_format, 0xffff0000ffff & mask_elt_size)
+        op0_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0, half_word_mask, vl)
+        op0_hi = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 16), vl)
+        op0_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 16), vl)
+        op0_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_hi, half_word_mask, vl)
+        op0 = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
+
+    # last byte swap
+    if elt_size > 8:
+        byte_mask = Immediate(op0.node_format, 0xff00ff00ff00ff & mask_elt_size)
+        op0_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0, byte_mask, vl)
+        op0_hi = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 8), vl)
+        op0_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 8), vl)
+        op0_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_hi, byte_mask, vl)
+        op0 = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
+    return op0
+
 
 def generate_zvkb_emulation():
     """Generate all Zvkb rotate instruction emulations."""
@@ -209,6 +241,14 @@ def generate_zvkb_emulation():
             )
             vuintm_brev8_v_emulation = brev8(lhs, vl)
 
+            vuintm_rev8_v_prototype = Operation(
+                vuintm_t,
+                OperationDesciptor(OperationType.REV8),
+                lhs,
+                vl
+            )
+            vuintm_rev8_v_emulation = rev8(lhs, vl)
+
             zvkb_insns = [
                 (vuintm_vror_vv_prototype, vuintm_vror_vv_emulation),
                 (vuintm_vror_vx_prototype, vuintm_vror_vx_emulation),
@@ -216,7 +256,8 @@ def generate_zvkb_emulation():
                 (vuintm_vrol_vx_prototype, vuintm_vrol_vx_emulation),
                 (vuintm_vandn_vv_prototype, vuintm_vandn_vv_emulation),
                 (vuintm_vandn_vx_prototype, vuintm_vandn_vx_emulation),
-                (vuintm_brev8_v_prototype, vuintm_brev8_v_emulation)
+                (vuintm_brev8_v_prototype, vuintm_brev8_v_emulation),
+                (vuintm_rev8_v_prototype, vuintm_rev8_v_emulation)
             ]
 
             output.append("// prototypes")
