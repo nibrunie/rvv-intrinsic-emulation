@@ -20,10 +20,12 @@ from .core import (
     OperationType,
     generate_intrinsic_prototype,
     generate_intrinsic_from_operation,
+    TailPolicy,
+    MaskPolicy
 )
 
 
-def rotate_left(elts: Node, rot_amount: Node, vl: Node) -> Node:
+def rotate_left(elts: Node, rot_amount: Node, vl: Node, dst: Node = None, vm: Node = None, tail_policy: TailPolicy = TailPolicy.UNDEFINED, mask_policy: MaskPolicy = MaskPolicy.UNDEFINED) -> Node:
     """Generate a rotate left operation using shifts and OR."""
     left_shift = Operation(
         elts.node_format,
@@ -57,7 +59,7 @@ def rotate_left(elts: Node, rot_amount: Node, vl: Node) -> Node:
     return Operation(elts.node_format, or_desc, left_shift, right_shift, vl)
 
 
-def rotate_right(elts: Node, rot_amount: Node, vl: Node) -> Node:
+def rotate_right(elts: Node, rot_amount: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: TailPolicy = TailPolicy.UNDEFINED, mask_policy: MaskPolicy = MaskPolicy.UNDEFINED) -> Node:
     """Generate a rotate right operation using shifts and OR."""
     right_shift = Operation(
         elts.node_format,
@@ -88,18 +90,18 @@ def rotate_right(elts: Node, rot_amount: Node, vl: Node) -> Node:
     )
      
     or_desc = OperationDesciptor(OperationType.OR)
-    return Operation(elts.node_format, or_desc, left_shift, right_shift, vl)
+    return Operation(elts.node_format, or_desc, left_shift, right_shift, vl, vm=vm, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
 
-def and_not(op0: Node, op1: Node, vl: Node) -> Node:
+def and_not(op0: Node, op1: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: TailPolicy = TailPolicy.UNDEFINED, mask_policy: MaskPolicy = MaskPolicy.UNDEFINED) -> Node:
     """Generate vector andn (and not) using operation RVV 1.0 operation only."""
     not_desc = OperationDesciptor(OperationType.NOT)
     not_op1 = Operation(op1.node_format, not_desc, op1, vl)
     and_desc = OperationDesciptor(OperationType.AND)
-    return Operation(op0.node_format, and_desc, op0, not_op1, vl)
+    return Operation(op0.node_format, and_desc, op0, not_op1, vl, vm=vm, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
 
-def brev8(op0: Node, vl: Node) -> Node:
+def brev8(op0: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: TailPolicy = TailPolicy.UNDEFINED, mask_policy: MaskPolicy = MaskPolicy.UNDEFINED) -> Node:
     """Generate vector brev8 (bit reverse in bytes) using operation RVV 1.0 operation only."""
     elt_size = element_size(op0.node_format.elt_type)
     mask_elt_size = (1 << (elt_size)) - 1
@@ -123,10 +125,10 @@ def brev8(op0: Node, vl: Node) -> Node:
     op0_1bit_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_1bit_lo, Immediate(get_scalar_format(op0.node_format), 1), vl)
     op0_1bit_hi_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0_inv_2bits, Immediate(get_scalar_format(op0.node_format), 1), vl)
     op0_1bit_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_1bit_hi_shift, mask_1bit, vl)
-    op0_inv_1bit = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_1bit_lo_shift, op0_1bit_hi_masked, vl)
+    op0_inv_1bit = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_1bit_lo_shift, op0_1bit_hi_masked, vl, vm=vm, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
     return op0_inv_1bit
 
-def rev8(op0: Node, vl: Node) -> Node:
+def rev8(op0: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: TailPolicy = TailPolicy.UNDEFINED, mask_policy: MaskPolicy = MaskPolicy.UNDEFINED) -> Node:
     """ Emulate byte reversal in element using only base operations """
     elt_size = element_size(op0.node_format.elt_type)
     mask_elt_size = (1 << (elt_size)) - 1
@@ -156,6 +158,11 @@ def rev8(op0: Node, vl: Node) -> Node:
         op0_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 8), vl)
         op0_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_hi, byte_mask, vl)
         op0 = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
+    # patching the last op (necessarily a vor) for mask and tail support
+    op0.vm = vm
+    op0.dst = dst
+    op0.tail_policy = tail_policy
+    op0.mask_policy = mask_policy
     return op0
 
 
@@ -170,102 +177,145 @@ def generate_zvkb_emulation():
     output.append("#include <riscv_vector.h>\n")
     output.append("#include <stddef.h>\n")
 
-    for elt_type in [EltType.U8, EltType.U16, EltType.U32, EltType.U64]:
+    for elt_type in [EltType.U8]:#, EltType.U16, EltType.U32, EltType.U64]:
         uint_t = NodeFormatDescriptor(NodeFormatType.SCALAR, elt_type, lmul_type=None)
         rhs_vx = Input(uint_t, 1)
-        for lmul in [LMULType.M1, LMULType.M2, LMULType.M4, LMULType.M8]:
+        for lmul in [LMULType.M1]:#, LMULType.M2, LMULType.M4, LMULType.M8]:
             vuintm_t = NodeFormatDescriptor(NodeFormatType.VECTOR, elt_type, lmul)
+            vbooln_t = NodeFormatDescriptor(NodeFormatType.MASK, elt_type, lmul)
             
             lhs = Input(vuintm_t, 0)
             rhs = Input(vuintm_t, 1)
+            vm = Input(vbooln_t, -2, name="vm")
+            vd = Input(vuintm_t, -1, name="vd")
 
-            vuintm_vror_vv_prototype = Operation(
-                vuintm_t,
-                OperationDesciptor(OperationType.ROR),
-                lhs,
-                rhs,
-                vl
-            )
-            vuintm_vror_vv_emulation = rotate_right(lhs, rhs, vl)
+            for tail_policy in [TailPolicy.UNDISTURBED, TailPolicy.AGNOSTIC]:
+                for mask_policy in [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC]:
+                    dst = vd if tail_policy == TailPolicy.UNDISTURBED or mask_policy == MaskPolicy.UNDISTURBED else None
+                    mask = vm if mask_policy != MaskPolicy.UNDEFINED else None
 
-            vuintm_vror_vx_prototype = Operation(
-                vuintm_t,
-                OperationDesciptor(OperationType.ROR),
-                lhs,
-                rhs_vx,
-                vl
-            )
-            vuintm_vror_vx_emulation = rotate_right(lhs, rhs_vx, vl)
+                    vuintm_vror_vv_prototype = Operation(
+                        vuintm_t,
+                        OperationDesciptor(OperationType.ROR),
+                        lhs,
+                        rhs,
+                        vl,
+                        vm = mask,
+                        tail_policy = tail_policy,
+                        mask_policy = mask_policy,
+                        dst = dst
+                    )
 
-            vuintm_vrol_vv_prototype = Operation(
-                vuintm_t,
-                OperationDesciptor(OperationType.ROL),
-                lhs,
-                rhs,
-                vl
-            )
-            vuintm_vrol_vv_emulation = rotate_left(lhs, rhs, vl)
+                    vuintm_vror_vv_emulation = rotate_right(lhs, rhs, vl, vm=mask, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
-            vuintm_vrol_vx_prototype = Operation(
-                vuintm_t,
-                OperationDesciptor(OperationType.ROL),
-                lhs,
-                rhs_vx,
-                vl
-            )
-            vuintm_vrol_vx_emulation = rotate_left(lhs, rhs_vx, vl)
+                    vuintm_vror_vx_prototype = Operation(
+                        vuintm_t,
+                        OperationDesciptor(OperationType.ROR),
+                        lhs,
+                        rhs_vx,
+                        vl,
+                        vm = mask,
+                        tail_policy = tail_policy,
+                        mask_policy = mask_policy,
+                        dst = dst
+                    )
+                    vuintm_vror_vx_emulation = rotate_right(lhs, rhs_vx, vl, vm=mask, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
-            vuintm_vandn_vv_prototype = Operation(
-                vuintm_t,
-                OperationDesciptor(OperationType.ANDN),
-                lhs,
-                rhs,
-                vl
-            )
-            vuintm_vandn_vv_emulation = and_not(lhs, rhs, vl)
+                    vuintm_vrol_vv_prototype = Operation(
+                        vuintm_t,
+                        OperationDesciptor(OperationType.ROL),
+                        lhs,
+                        rhs,
+                        vl,
+                        vm = mask,
+                        tail_policy = tail_policy,
+                        mask_policy = mask_policy,
+                        dst = dst
+                    )
+                    vuintm_vrol_vv_emulation = rotate_left(lhs, rhs, vl, vm=mask, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
-            vuintm_vandn_vx_prototype = Operation(
-                vuintm_t,
-                OperationDesciptor(OperationType.ANDN),
-                lhs,
-                rhs_vx,
-                vl
-            )
-            vuintm_vandn_vx_emulation = and_not(lhs, rhs_vx, vl)
+                    vuintm_vrol_vx_prototype = Operation(
+                        vuintm_t,
+                        OperationDesciptor(OperationType.ROL),
+                        lhs,
+                        rhs_vx,
+                        vl,
+                        vm = mask,
+                        tail_policy = tail_policy,
+                        mask_policy = mask_policy,
+                        dst = dst
+                    )
+                    vuintm_vrol_vx_emulation = rotate_left(lhs, rhs_vx, vl, vm=mask, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
-            vuintm_brev8_v_prototype = Operation(
-                vuintm_t,
-                OperationDesciptor(OperationType.BREV8),
-                lhs,
-                vl
-            )
-            vuintm_brev8_v_emulation = brev8(lhs, vl)
+                    vuintm_vandn_vv_prototype = Operation(
+                        vuintm_t,
+                        OperationDesciptor(OperationType.ANDN),
+                        lhs,
+                        rhs,
+                        vl,
+                        vm = mask,
+                        tail_policy = tail_policy,
+                        mask_policy = mask_policy,
+                        dst = dst
+                    )
+                    vuintm_vandn_vv_emulation = and_not(lhs, rhs, vl, vm=mask, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
-            vuintm_rev8_v_prototype = Operation(
-                vuintm_t,
-                OperationDesciptor(OperationType.REV8),
-                lhs,
-                vl
-            )
-            vuintm_rev8_v_emulation = rev8(lhs, vl)
+                    vuintm_vandn_vx_prototype = Operation(
+                        vuintm_t,
+                        OperationDesciptor(OperationType.ANDN),
+                        lhs,
+                        rhs_vx,
+                        vl,
+                        vm = mask,
+                        tail_policy = tail_policy,
+                        mask_policy = mask_policy,
+                        dst = dst
+                    )
+                    vuintm_vandn_vx_emulation = and_not(lhs, rhs_vx, vl, vm=mask, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
-            zvkb_insns = [
-                (vuintm_vror_vv_prototype, vuintm_vror_vv_emulation),
-                (vuintm_vror_vx_prototype, vuintm_vror_vx_emulation),
-                (vuintm_vrol_vv_prototype, vuintm_vrol_vv_emulation),
-                (vuintm_vrol_vx_prototype, vuintm_vrol_vx_emulation),
-                (vuintm_vandn_vv_prototype, vuintm_vandn_vv_emulation),
-                (vuintm_vandn_vx_prototype, vuintm_vandn_vx_emulation),
-                (vuintm_brev8_v_prototype, vuintm_brev8_v_emulation),
-                (vuintm_rev8_v_prototype, vuintm_rev8_v_emulation)
-            ]
+                    vuintm_brev8_v_prototype = Operation(
+                        vuintm_t,
+                        OperationDesciptor(OperationType.BREV8),
+                        lhs,
+                        vl,
+                        vm = mask,
+                        tail_policy = tail_policy,
+                        mask_policy = mask_policy,
+                        dst = dst
+                    )
+                    vuintm_brev8_v_emulation = brev8(lhs, vl, vm=mask, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
-            output.append("// prototypes")
-            for prototype in [p for p, e in zvkb_insns]:
-                output.append(generate_intrinsic_prototype(prototype))
-            output.append("\n// intrinsics")
-            for prototype, emulation in zvkb_insns:
-                output.append(generate_intrinsic_from_operation(prototype, emulation))
+                    vuintm_rev8_v_prototype = Operation(
+                        vuintm_t,
+                        OperationDesciptor(OperationType.REV8),
+                        lhs,
+                        vl,
+                        vm = mask,
+                        tail_policy = tail_policy,
+                        mask_policy = mask_policy,
+                        dst = dst
+                    )
+                    vuintm_rev8_v_emulation = rev8(lhs, vl, vm=mask, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
+
+                            
+
+                    zvkb_insns = [
+                        (vuintm_vror_vv_prototype, vuintm_vror_vv_emulation),
+                        (vuintm_vror_vx_prototype, vuintm_vror_vx_emulation),
+                        (vuintm_vrol_vv_prototype, vuintm_vrol_vv_emulation),
+                        (vuintm_vrol_vx_prototype, vuintm_vrol_vx_emulation),
+                        (vuintm_vandn_vv_prototype, vuintm_vandn_vv_emulation),
+                        (vuintm_vandn_vx_prototype, vuintm_vandn_vx_emulation),
+                        (vuintm_brev8_v_prototype, vuintm_brev8_v_emulation),
+                        (vuintm_rev8_v_prototype, vuintm_rev8_v_emulation)
+                    ]
+
+                    output.append("// prototypes")
+                    for prototype in [p for p, e in zvkb_insns]:
+                        output.append(generate_intrinsic_prototype(prototype))
+                    output.append("\n// intrinsics")
+                    for prototype, emulation in zvkb_insns:
+                        output.append(generate_intrinsic_from_operation(prototype, emulation))
     
     return "\n".join(output)
 
