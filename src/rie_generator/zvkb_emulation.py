@@ -166,7 +166,7 @@ def rev8(op0: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: Ta
     return op0
 
 
-def generate_zvkb_emulation():
+def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions: bool):
     """Generate all Zvkb rotate instruction emulations."""
     output = []
     
@@ -310,20 +310,30 @@ def generate_zvkb_emulation():
                         (vuintm_rev8_v_prototype, vuintm_rev8_v_emulation)
                     ]
 
-                    output.append("// prototypes")
-                    for prototype in [p for p, e in zvkb_insns]:
-                        output.append(generate_intrinsic_prototype(prototype))
-                    output.append("\n// intrinsics")
-                    for prototype, emulation in zvkb_insns:
-                        output.append(generate_intrinsic_from_operation(prototype, emulation))
+                    if prototypes:
+                        output.append("// prototypes")
+                        for prototype in [p for p, e in zvkb_insns]:
+                            output.append(generate_intrinsic_prototype(prototype))
+                    if definitions:
+                        output.append("\n// intrinsics")
+                        for prototype, emulation in zvkb_insns:
+                            output.append(generate_intrinsic_from_operation(prototype, emulation, attributes=attributes))
     
     return "\n".join(output)
 
 
-def main():
+def main(attributes: list[str], prototypes: bool, definitions: bool):
     """CLI entry point for generating Zvkb emulation code."""
-    print(generate_zvkb_emulation())
+    print(generate_zvkb_emulation(attributes, prototypes, definitions))
 
 
 if __name__ == "__main__":
-    main()
+    # extract attributes from command line arguments
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-a", "--attributes", nargs="+", default=[], help="Attributes to add to the generated code")
+    parser.add_argument("-p", "--prototype", default=False, action="store", type=bool, help="generate prototypes")
+    parser.add_argument("-d", "--definition", default=True, action="store", type=bool, help="generate definitions")
+    args = parser.parse_args()
+    
+    main(attributes=args.attributes, prototypes=args.prototype, definitions=args.definition)

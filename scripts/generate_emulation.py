@@ -29,23 +29,40 @@ def main():
         help='Which extension to generate emulation for (default: all)'
     )
     parser.add_argument(
+        '--attributes', '-a',
+        nargs='+',
+        default=[],
+        help='Attributes to add to the generated code'
+    )
+    parser.add_argument(
         '--output', '-o',
         type=str,
         default=None,
         help='Output file (default: stdout)'
     )
-    
+    parser.add_argument(
+        '--prototypes', '-p',
+        type=bool,
+        default=False,
+        help='Generate prototypes (default: False)'
+    )
+    parser.add_argument(
+        '--definitions', '-d',
+        type=bool,
+        default=True,
+        help='Generate definitions (default: True)'
+    )    
     args = parser.parse_args()
     
     output = []
     
     if args.extension in ('zvkb', 'all'):
         output.append("/* ===== Zvkb Emulation ===== */")
-        output.append(generate_zvkb_emulation())
+        output.append(generate_zvkb_emulation(attributes=args.attributes, prototypes=args.prototypes, definitions=args.definitions))
     
     if args.extension in ('zvdot4a8i', 'all'):
         output.append("\n/* ===== ZVDOT4A8I Emulation ===== */")
-        output.append(generate_zvdot4a8i_emulation())
+        output.append(generate_zvdot4a8i_emulation(attributes=args.attributes, prototypes=args.prototypes, definitions=args.definitions))
     
     result = "\n".join(output)
     

@@ -425,7 +425,7 @@ def generate_scalar_operation(code: CodeObject, op: Node, memoization_map: dict[
     return temp_var
     
 
-def generate_intrinsic_from_operation(prototype: Operation, emulation: Operation) -> str:
+def generate_intrinsic_from_operation(prototype: Operation, emulation: Operation, attributes: list[str]) -> str:
     intrinsic_name = generate_intrinsic_name(prototype)
     # generate body
     dst_type = generate_node_format_type_string(prototype.node_format)
@@ -445,7 +445,8 @@ def generate_intrinsic_from_operation(prototype: Operation, emulation: Operation
     if prototype.vm is not None:
         src_list.insert(0, f"{generate_node_format_type_string(prototype.vm.node_format)} {get_src_name(prototype.vm)}")
         memoisation_map[prototype.vm] = get_src_name(prototype.vm)
-    header = f"{dst_type} {intrinsic_name}({', '.join(src_list)}) {{\n"
+    attributes_str = " ".join(attributes)
+    header = f"{attributes_str} {dst_type} {intrinsic_name}({', '.join(src_list)}) {{\n"
     code = CodeObject("")
     result = generate_operation(code, emulation, memoisation_map)
     footer = f"  return {result};\n}}"
