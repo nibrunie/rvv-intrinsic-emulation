@@ -307,8 +307,6 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     # TODO: handle tail and mask AGNOSTIC policies
     if prototype.tail_policy == TailPolicy.UNDISTURBED:
         suffix += "tu"
-    elif prototype.tail_policy == TailPolicy.AGNOSTIC:
-        suffix += "t"
     if prototype.mask_policy == MaskPolicy.AGNOSTIC:
         suffix += "m"
     elif prototype.mask_policy == MaskPolicy.UNDISTURBED:
