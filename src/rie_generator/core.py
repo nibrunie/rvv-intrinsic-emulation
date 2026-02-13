@@ -69,6 +69,31 @@ class LMULType(Enum):
         else:
             raise ValueError("Invalid LMUL type")
 
+    @staticmethod
+    def from_value(value: float) -> 'LMULType':
+        VALUE_MAP = {
+            0.125: LMULType.MF8,
+            0.25: LMULType.MF4,
+            0.5: LMULType.MF2,
+            1: LMULType.M1,
+            2: LMULType.M2,
+            4: LMULType.M4,
+            8: LMULType.M8,
+        }
+        if value not in VALUE_MAP:
+            raise ValueError(f"Invalid LMUL value: {value}")
+        return VALUE_MAP[value]
+
+    @staticmethod
+    def divide(lmul_type: 'LMULType', divisor: int) -> 'LMULType':
+        """Divide an LMUL type by a power-of-two divisor."""
+        return LMULType.from_value(LMULType.to_value(lmul_type) / divisor)
+
+    @staticmethod
+    def multiply(lmul_type: 'LMULType', factor: int) -> 'LMULType':
+        """Multiply an LMUL type by a power-of-two factor."""
+        return LMULType.from_value(LMULType.to_value(lmul_type) * factor)
+
 class OperationType(Enum):
     ROR = auto()
     ROL = auto()
@@ -95,6 +120,14 @@ class OperationType(Enum):
     GE = auto()
     BREV8 = auto()
     REV8 = auto()
+    WMACC = auto()
+    WMACCU = auto()
+    WMACCSU = auto()
+    WMACCUS = auto()
+    DOTA4 = auto()
+    DOTA4U = auto()
+    DOTA4SU = auto()
+    DOTA4US = auto()
 
     INPUT = auto()
     IMMEDIATE = auto()
@@ -133,6 +166,22 @@ class OperationType(Enum):
             return "brev8"
         elif op_type == OperationType.REV8:
             return "rev8"
+        elif op_type == OperationType.WMACC:
+            return "wmacc"
+        elif op_type == OperationType.WMACCU:
+            return "wmaccu"
+        elif op_type == OperationType.WMACCSU:
+            return "wmaccsu"
+        elif op_type == OperationType.WMACCUS:
+            return "wmaccus"
+        elif op_type == OperationType.DOTA4:
+            return "dota4"
+        elif op_type == OperationType.DOTA4U:
+            return "dota4u"
+        elif op_type == OperationType.DOTA4SU:
+            return "dota4su"
+        elif op_type == OperationType.DOTA4US:
+            return "dota4us"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
