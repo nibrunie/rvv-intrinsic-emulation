@@ -144,8 +144,12 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
 VALID_32BIT_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4]
 
 
-def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = False, definitions: bool = True):
+def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = False, definitions: bool = True,
+                                  lmul_filter: list = None):
     """Generate all Zvdot4a8i instruction emulations.
+
+    Args:
+        lmul_filter: if set, only generate for these LMULType values
 
     Generates emulation code for:
       - vdota4.vv / vdota4.vx   (signed-signed)
@@ -162,7 +166,9 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
     output.append("#include <riscv_vector.h>\n")
     output.append("#include <stddef.h>\n")
 
-    for lmul in VALID_32BIT_LMULS:
+    lmuls = [l for l in VALID_32BIT_LMULS if lmul_filter is None or l in lmul_filter]
+
+    for lmul in lmuls:
         vint32_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, lmul)
         vuint32_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, lmul)
         scalar_u32_t = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U32, lmul_type=None)
