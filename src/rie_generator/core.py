@@ -47,8 +47,10 @@ class LMULType(Enum):
             return "m4"
         elif lmul_type == LMULType.M8:
             return "m8"
+        elif lmul_type is None:
+            return "undefined(None)"
         else:
-            raise ValueError("Invalid LMUL type")
+            raise ValueError(f"Invalid LMUL type: {lmul_type}")
 
     @staticmethod
     def to_value(lmul_type: 'LMULType') -> float:
@@ -135,6 +137,9 @@ class OperationType(Enum):
     WADDU = auto()
     MV = auto()
 
+    # misc
+    REINTERPRET = auto()
+
     INPUT = auto()
     IMMEDIATE = auto()
 
@@ -200,6 +205,8 @@ class OperationType(Enum):
             return "waddu"
         elif op_type == OperationType.MV:
             return "mv"
+        elif op_type == OperationType.REINTERPRET:
+            return "reinterpret"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -231,6 +238,9 @@ class NodeFormatDescriptor:
         self.node_format_type = node_format_type
         self.elt_type = elt_type
         self.lmul_type = lmul_type
+
+    def __str__(self):
+        return f"{self.node_format_type.name}_{self.elt_type.name}_{LMULType.to_string(self.lmul_type)}"
 
 
 class Immediate(Node):
@@ -369,6 +379,11 @@ def generate_intrinsic_name(prototype: Operation) -> str:
             operand_type_descriptor += "x"
         elif arg.node_format.node_format_type == NodeFormatType.IMMEDIATE:
             operand_type_descriptor += "i"
+    # Some intrinsics (e.g. reinterpret) require the source type to be displayed
+    # in the name suffix
+    if prototype.op_desc.op_type in  [OperationType.REINTERPRET]:
+        source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
+        intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
     suffix = ""
     # in rvv-intrinsics-doc, tail policy always come before mask policy
     # TODO: handle tail and mask AGNOSTIC policies

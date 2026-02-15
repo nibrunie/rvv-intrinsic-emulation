@@ -76,6 +76,21 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     scalar_u32_fmt = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U32)
     vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
 
+    if vs1.node_format.node_format_type is NodeFormatType.SCALAR:
+        vs1 = Operation(u32_fmt, OperationDesciptor(OperationType.MV), vs1, vl)
+    if vs2.node_format.node_format_type is NodeFormatType.SCALAR:
+        vs2 = Operation(u32_fmt, OperationDesciptor(OperationType.MV), vs2, vl)
+
+
+    assert vs2.node_format.node_format_type is NodeFormatType.VECTOR
+    assert vs1.node_format.node_format_type is NodeFormatType.VECTOR
+
+    # Step 0: Reinterpret vs1 as u8
+    vs1_u8 = Operation(u8_fmt, OperationDesciptor(OperationType.REINTERPRET), vs1)
+    # Since vs2/vs1 might be swapped, we also need to check whether vs2/rs2 needs to
+    # be reinterpreted
+    vs2_u8 = Operation(u8_fmt, OperationDesciptor(OperationType.REINTERPRET), vs2)
+
     # Step 1: vl_x4 = 4 * vl (for SEW=8 operations)
     vl_x4 = Operation(vl_fmt, OperationDesciptor(OperationType.MUL),
                        vl, Immediate(vl_fmt, 4))
@@ -86,7 +101,7 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     # Step 1: Widening multiply 8-bit to 16-bit
     # SEW=8, LMUL=original, vl=4*original_vl
     products = Operation(prod_16_x2_fmt, OperationDesciptor(wmul_op),
-                         vs2, vs1, vl_x4)
+                         vs2_u8, vs1_u8, vl_x4)
 
     # Step 2: Extract high products via narrow right shift by 32
     # Source: products viewed as SEW=64 at 2*LMUL, result: SEW=32 at LMUL
