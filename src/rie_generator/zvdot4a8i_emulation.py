@@ -6,11 +6,13 @@ This module generates C code for emulating RISC-V Zvdot4a8i vector
 dot product instructions (vdota4, vdota4u, vdota4su, vdota4us) using
 standard RVV 1.0 intrinsics.
 
-Emulation strategy:
-  For each 32-bit element, extract the four 8-bit sub-elements using
-  vnsrl (narrowing shift right logical) for vectors or scalar
-  shift+mask for scalars, then use vwmacc (widening
-  multiply-accumulate) family to accumulate into the 32-bit result.
+Emulation strategy (widening multiply + pairwise reduction):
+  1. Widening multiply all 4 byte lanes at once (SEW=8, vl=4*orig_vl)
+  2. Extract high/low product pairs via narrowing shift (SEW=64→32)
+  3. Widening add high + low pairs (SEW=16→32)
+  4. Extract high/low sums via narrowing shift (SEW=64→32)
+  5. Add high + low sums (SEW=32)
+  6. Add with accumulator vd (SEW=32)
 """
 
 from .core import (
@@ -33,141 +35,98 @@ from .core import (
 )
 
 
-def extract_byte_lane(src: Node, lane: int, narrow_lmul: LMULType, vl: Node) -> Node:
-    """Extract 8-bit lane from a 32-bit source (vector or scalar).
+def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationType, wadd_op: OperationType, lmul: LMULType) -> Node:
+    """Common dot product emulation pipeline.
 
-    For vectors: uses vnsrl (narrowing shift right logical)
-    For scalars: uses scalar shift + mask
+    Args:
+        vs2: first source operand (vector, 32-bit elements)
+        vs1: second source operand (vector or scalar, 32-bit)
+        vd: accumulator source (vector, 32-bit)
+        vl: vector length
+        wmul_op: widening multiply operation type (WMUL, WMULU, WMULSU)
+        wadd_op: widening add operation type (WADD, WADDU)
+        lmul: original LMUL for 32-bit elements
     """
-    if src.node_format.node_format_type == NodeFormatType.VECTOR:
-        narrow_u8_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, narrow_lmul)
-        shift = Immediate(get_scalar_format(src.node_format), lane * 8)
-        return Operation(narrow_u8_fmt, OperationDesciptor(OperationType.NSRL), src, shift, vl)
-    else:
-        # scalar: shift right and mask to get byte
-        scalar_u8_fmt = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U8)
-        if lane == 0:
-            return Operation(
-                scalar_u8_fmt, OperationDesciptor(OperationType.AND),
-                src, Immediate(get_scalar_format(src.node_format), 0xFF)
-            )
-        else:
-            shifted = Operation(
-                src.node_format, OperationDesciptor(OperationType.SRL),
-                src, Immediate(get_scalar_format(src.node_format), lane * 8)
-            )
-            return Operation(
-                scalar_u8_fmt, OperationDesciptor(OperationType.AND),
-                shifted, Immediate(get_scalar_format(src.node_format), 0xFF)
-            )
+    # Derived formats
+    lmul_x2 = LMULType.multiply(lmul, 2)
+    # SEW=8 at original LMUL (same register group as 32-bit, 4x more elements)
+    u8_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, lmul)
+    # SEW=16 at 2*LMUL (widening multiply result)
+    u16_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U16, lmul_x2)
+    s16_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S16, lmul_x2)
+    # SEW=32 at original LMUL (narrowing result)
+    u32_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, lmul)
+    s32_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, lmul)
+    # SEW=16 at original LMUL (for widening add sources)
+    u16_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U16, lmul)
+    s16_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S16, lmul)
+    # SEW=32 at 2*LMUL (widening add result)
+    u32_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, lmul_x2)
+    s32_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, lmul_x2)
 
+    # Choose signed/unsigned formats based on multiply type
+    is_result_signed = wmul_op in (OperationType.WMUL, OperationType.WMULSU)
+    prod_16_x2_fmt = s16_x2_fmt if is_result_signed else u16_x2_fmt
+    prod_32_fmt = s32_fmt if is_result_signed else u32_fmt
+    sum_16_fmt = s16_fmt if is_result_signed else u16_fmt
+    sum_32_x2_fmt = s32_x2_fmt if is_result_signed else u32_x2_fmt
+    result_32_fmt = vd.node_format
 
-def dot4_uu(vs2: Node, vs1: Node, vd: Node, vl: Node) -> Node:
-    """Emulate vdota4u: unsigned-unsigned 4-element dot product.
+    # Scalar formats for shift amounts and vl multiplier
+    scalar_u32_fmt = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U32)
+    vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
 
-    vd[i] += u8(vs2[i][0]) * u8(vs1[i][0])
-           + u8(vs2[i][1]) * u8(vs1[i][1])
-           + u8(vs2[i][2]) * u8(vs1[i][2])
-           + u8(vs2[i][3]) * u8(vs1[i][3])
-    """
-    narrow_lmul = LMULType.divide(vs2.node_format.lmul_type, 4)
+    # Step 1: vl_x4 = 4 * vl (for SEW=8 operations)
+    vl_x4 = Operation(vl_fmt, OperationDesciptor(OperationType.MUL),
+                       vl, Immediate(vl_fmt, 4))
+    # Step 1 (cont.): vl_x2 = 2 * vl (for SEW=16 operations)
+    vl_x2 = Operation(vl_fmt, OperationDesciptor(OperationType.MUL),
+                       vl, Immediate(vl_fmt, 2))
 
-    acc = vd
-    for lane in range(4):
-        vs2_lane = extract_byte_lane(vs2, lane, narrow_lmul, vl)
-        vs1_lane = extract_byte_lane(vs1, lane, narrow_lmul, vl)
-        acc = Operation(
-            vd.node_format, OperationDesciptor(OperationType.WMACCU),
-            vs1_lane, vs2_lane, vl,
-            dst=acc, tail_policy=TailPolicy.UNDISTURBED
-        )
-    return acc
+    # Step 1: Widening multiply 8-bit to 16-bit
+    # SEW=8, LMUL=original, vl=4*original_vl
+    products = Operation(prod_16_x2_fmt, OperationDesciptor(wmul_op),
+                         vs2, vs1, vl_x4)
 
+    # Step 2: Extract high products via narrow right shift by 32
+    # Source: products viewed as SEW=64 at 2*LMUL, result: SEW=32 at LMUL
+    shift_32 = Immediate(scalar_u32_fmt, 32)
+    high_products = Operation(prod_32_fmt, OperationDesciptor(OperationType.NSRL),
+                              products, shift_32, vl)
 
-def dot4_ss(vs2: Node, vs1: Node, vd: Node, vl: Node) -> Node:
-    """Emulate vdota4: signed-signed 4-element dot product.
+    # Step 3: Extract low products via narrow right shift by 0
+    shift_0 = Immediate(scalar_u32_fmt, 0)
+    low_products = Operation(prod_32_fmt, OperationDesciptor(OperationType.NSRL),
+                             products, shift_0, vl)
 
-    vd[i] += s8(vs2[i][0]) * s8(vs1[i][0])
-           + s8(vs2[i][1]) * s8(vs1[i][1])
-           + s8(vs2[i][2]) * s8(vs1[i][2])
-           + s8(vs2[i][3]) * s8(vs1[i][3])
+    # Step 4: Widening addition of high and low products
+    # Source: SEW=16 at LMUL, vl=2*original_vl, result: SEW=32 at 2*LMUL
+    sums = Operation(sum_32_x2_fmt, OperationDesciptor(wadd_op),
+                     high_products, low_products, vl_x2)
 
-    Uses vnsrl to extract raw bytes (unsigned), then vwmacc to
-    interpret them as signed and perform widening multiply-accumulate.
-    Note: vwmacc reinterprets the raw bytes as signed.
-    """
-    narrow_lmul = LMULType.divide(vs2.node_format.lmul_type, 4)
+    # Step 5: Extract high sums via narrow right shift by 32
+    # Source: sums viewed as SEW=64 at 2*LMUL, result: SEW=32 at LMUL
+    high_sums = Operation(result_32_fmt, OperationDesciptor(OperationType.NSRL),
+                          sums, shift_32, vl)
 
-    acc = vd
-    for lane in range(4):
-        vs2_lane = extract_byte_lane(vs2, lane, narrow_lmul, vl)
-        vs1_lane = extract_byte_lane(vs1, lane, narrow_lmul, vl)
-        acc = Operation(
-            vd.node_format, OperationDesciptor(OperationType.WMACC),
-            vs1_lane, vs2_lane, vl,
-            dst=acc, tail_policy=TailPolicy.UNDISTURBED
-        )
-    return acc
+    # Step 6: Extract low sums via narrow right shift by 0
+    low_sums = Operation(result_32_fmt, OperationDesciptor(OperationType.NSRL),
+                         sums, shift_0, vl)
 
+    # Step 7: Single-width addition of high and low sums (SEW=32)
+    partial_sum = Operation(result_32_fmt, OperationDesciptor(OperationType.ADD),
+                            high_sums, low_sums, vl)
 
-def dot4_su(vs2: Node, vs1: Node, vd: Node, vl: Node) -> Node:
-    """Emulate vdota4su: signed(vs2)-unsigned(vs1) 4-element dot product.
+    # Step 8: Final single-width addition with accumulator (vd)
+    result = Operation(result_32_fmt, OperationDesciptor(OperationType.ADD),
+                       partial_sum, vd, vl)
 
-    vd[i] += s8(vs2[i][0]) * u8(vs1[i][0])
-           + s8(vs2[i][1]) * u8(vs1[i][1])
-           + s8(vs2[i][2]) * u8(vs1[i][2])
-           + s8(vs2[i][3]) * u8(vs1[i][3])
-
-    Uses vwmaccsu: signed * unsigned widening multiply-accumulate.
-    __riscv_vwmaccsu(vd, signed_op, unsigned_op, vl)
-    -> vs2 lanes are the signed operand, vs1 lanes are unsigned.
-    """
-    narrow_lmul = LMULType.divide(vs2.node_format.lmul_type, 4)
-
-    acc = vd
-    for lane in range(4):
-        # vs2 sub-elements are signed, vs1 sub-elements are unsigned
-        vs2_lane = extract_byte_lane(vs2, lane, narrow_lmul, vl)
-        vs1_lane = extract_byte_lane(vs1, lane, narrow_lmul, vl)
-        # vwmaccsu(vd, signed, unsigned, vl)
-        acc = Operation(
-            vd.node_format, OperationDesciptor(OperationType.WMACCSU),
-            vs2_lane, vs1_lane, vl,
-            dst=acc, tail_policy=TailPolicy.UNDISTURBED
-        )
-    return acc
-
-
-def dot4_us(vs2: Node, rs1: Node, vd: Node, vl: Node) -> Node:
-    """Emulate vdota4us: unsigned(vs2)-signed(rs1) 4-element dot product (vx only).
-
-    vd[i] += u8(vs2[i][0]) * s8(rs1[0])
-           + u8(vs2[i][1]) * s8(rs1[1])
-           + u8(vs2[i][2]) * s8(rs1[2])
-           + u8(vs2[i][3]) * s8(rs1[3])
-
-    Uses vwmaccus: unsigned * signed widening multiply-accumulate.
-    __riscv_vwmaccus(vd, unsigned_scalar, signed_vector, vl)
-    Note: vx-only, rs1 is a scalar holding 4 packed bytes.
-    """
-    narrow_lmul = LMULType.divide(vs2.node_format.lmul_type, 4)
-
-    acc = vd
-    for lane in range(4):
-        vs2_lane = extract_byte_lane(vs2, lane, narrow_lmul, vl)
-        rs1_lane = extract_byte_lane(rs1, lane, narrow_lmul, vl)
-        # vwmaccus(vd, unsigned_scalar, signed_vector, vl)
-        acc = Operation(
-            vd.node_format, OperationDesciptor(OperationType.WMACCUS),
-            rs1_lane, vs2_lane, vl,
-            dst=acc, tail_policy=TailPolicy.UNDISTURBED
-        )
-    return acc
+    return result
 
 
 # LMUL values valid for 32-bit elements (SEW=32)
-# M1 -> 8-bit uses MF4, M2 -> MF2, M4 -> M1, M8 -> M2
-VALID_32BIT_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4, LMULType.M8]
+# Need room for 2*LMUL widening, so max is M4 (2*M4 = M8)
+VALID_32BIT_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4]
 
 
 def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = False, definitions: bool = True):
@@ -189,14 +148,11 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
     output.append("#include <stddef.h>\n")
 
     for lmul in VALID_32BIT_LMULS:
-        # Accumulator / result type: 32-bit signed or unsigned
         vint32_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, lmul)
         vuint32_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, lmul)
-
-        # Scalar operand type (32 bits, holding 4 packed 8-bit values)
         scalar_u32_t = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U32, lmul_type=None)
 
-        # Inputs
+        # --- Inputs ---
         vs2_u = Input(vuint32_t, 0, name="vs2")
         vs1_u = Input(vuint32_t, 1, name="vs1")
         vd_u  = Input(vuint32_t, 2, name="vd")
@@ -210,69 +166,72 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
         zvdot4a8i_insns = []
 
         # --- vdota4u: unsigned-unsigned ---
-        # vv variant
+        # vv
         proto_dota4u_vv = Operation(
             vuint32_t, OperationDesciptor(OperationType.DOTA4U),
             vs2_u, vs1_u, vl,
             dst=vd_u, tail_policy=TailPolicy.UNDISTURBED
         )
-        emul_dota4u_vv = dot4_uu(vs2_u, vs1_u, vd_u, vl)
+        emul_dota4u_vv = dot4_pipeline(vs2_u, vs1_u, vd_u, vl, OperationType.WMULU, OperationType.WADDU, lmul)
         zvdot4a8i_insns.append((proto_dota4u_vv, emul_dota4u_vv))
 
-        # vx variant
+        # vx: use vector-scalar widening multiply directly
         proto_dota4u_vx = Operation(
             vuint32_t, OperationDesciptor(OperationType.DOTA4U),
             vs2_u, rs1_u, vl,
             dst=vd_u, tail_policy=TailPolicy.UNDISTURBED
         )
-        emul_dota4u_vx = dot4_uu(vs2_u, rs1_u, vd_u, vl)
+        emul_dota4u_vx = dot4_pipeline(vs2_u, rs1_u, vd_u, vl, OperationType.WMULU, OperationType.WADDU, lmul)
         zvdot4a8i_insns.append((proto_dota4u_vx, emul_dota4u_vx))
 
         # --- vdota4: signed-signed ---
-        # vv variant
+        # vv
         proto_dota4_vv = Operation(
             vint32_t, OperationDesciptor(OperationType.DOTA4),
             vs2_s, vs1_s, vl,
             dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
         )
-        emul_dota4_vv = dot4_ss(vs2_s, vs1_s, vd_s, vl)
+        emul_dota4_vv = dot4_pipeline(vs2_s, vs1_s, vd_s, vl, OperationType.WMUL, OperationType.WADD, lmul)
         zvdot4a8i_insns.append((proto_dota4_vv, emul_dota4_vv))
 
-        # vx variant
+        # vx
         proto_dota4_vx = Operation(
             vint32_t, OperationDesciptor(OperationType.DOTA4),
             vs2_s, rs1_s, vl,
             dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
         )
-        emul_dota4_vx = dot4_ss(vs2_s, rs1_s, vd_s, vl)
+        emul_dota4_vx = dot4_pipeline(vs2_s, rs1_s, vd_s, vl, OperationType.WMUL, OperationType.WADD, lmul)
         zvdot4a8i_insns.append((proto_dota4_vx, emul_dota4_vx))
 
         # --- vdota4su: signed(vs2)-unsigned(vs1) ---
-        # vv variant: vs2 signed, vs1 unsigned
+        # vv
         proto_dota4su_vv = Operation(
             vint32_t, OperationDesciptor(OperationType.DOTA4SU),
             vs2_s, vs1_u, vl,
             dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
         )
-        emul_dota4su_vv = dot4_su(vs2_s, vs1_u, vd_s, vl)
+        emul_dota4su_vv = dot4_pipeline(vs2_s, vs1_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul)
         zvdot4a8i_insns.append((proto_dota4su_vv, emul_dota4su_vv))
 
-        # vx variant
+        # vx
         proto_dota4su_vx = Operation(
             vint32_t, OperationDesciptor(OperationType.DOTA4SU),
             vs2_s, rs1_u, vl,
             dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
         )
-        emul_dota4su_vx = dot4_su(vs2_s, rs1_u, vd_s, vl)
+        emul_dota4su_vx = dot4_pipeline(vs2_s, rs1_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul)
         zvdot4a8i_insns.append((proto_dota4su_vx, emul_dota4su_vx))
 
         # --- vdota4us: unsigned(vs2)-signed(rs1), vx only ---
+        # vwmulsu_vx(vs2, rs1) treats vs2 as signed and rs1 as unsigned.
+        # We need unsigned(vs2) * signed(rs1), so we use swapped operand order.
         proto_dota4us_vx = Operation(
             vint32_t, OperationDesciptor(OperationType.DOTA4US),
             vs2_u, rs1_s, vl,
             dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
         )
-        emul_dota4us_vx = dot4_us(vs2_u, rs1_s, vd_s, vl)
+        # Pass rs1 first (signed) and vs2 second (unsigned) for vwmulsu
+        emul_dota4us_vx = dot4_pipeline(rs1_s, vs2_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul)
         zvdot4a8i_insns.append((proto_dota4us_vx, emul_dota4us_vx))
 
         if prototypes:

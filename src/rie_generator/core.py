@@ -128,6 +128,12 @@ class OperationType(Enum):
     DOTA4U = auto()
     DOTA4SU = auto()
     DOTA4US = auto()
+    WMUL = auto()
+    WMULU = auto()
+    WMULSU = auto()
+    WADD = auto()
+    WADDU = auto()
+    MV = auto()
 
     INPUT = auto()
     IMMEDIATE = auto()
@@ -182,6 +188,18 @@ class OperationType(Enum):
             return "dota4su"
         elif op_type == OperationType.DOTA4US:
             return "dota4us"
+        elif op_type == OperationType.WMUL:
+            return "wmul"
+        elif op_type == OperationType.WMULU:
+            return "wmulu"
+        elif op_type == OperationType.WMULSU:
+            return "wmulsu"
+        elif op_type == OperationType.WADD:
+            return "wadd"
+        elif op_type == OperationType.WADDU:
+            return "waddu"
+        elif op_type == OperationType.MV:
+            return "mv"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -361,6 +379,9 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     elif prototype.mask_policy == MaskPolicy.UNDISTURBED:
         suffix += "mu"
     suffix = f"_{suffix}" if suffix != "" else ""
+    # vmv uses special naming: __riscv_vmv_v_x_<type> (v_ prefix for destination)
+    if prototype.op_desc.op_type == OperationType.MV:
+        operand_type_descriptor = f"v_{operand_type_descriptor}"
     intrinsic_name = f"__riscv_v{OperationType.to_string(prototype.op_desc.op_type)}_{operand_type_descriptor}_{intrinsic_type_tag}{suffix}"
     return intrinsic_name
 
