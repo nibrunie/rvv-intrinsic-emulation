@@ -68,12 +68,14 @@ def main():
         '--prototypes', '-p',
         type=bool,
         default=False,
+        action="store",
         help='Generate prototypes (default: False)'
     )
     parser.add_argument(
         '--definitions', '-d',
         type=bool,
         default=True,
+        action="store",
         help='Generate definitions (default: True)'
     )
     parser.add_argument(
@@ -138,6 +140,8 @@ def main():
             prototypes=args.prototypes,
             definitions=args.definitions,
             lmul_filter=lmul_filter,
+            tail_policy_filter=tail_policy_filter,
+            mask_policy_filter=mask_policy_filter,
         ))
     
     result = "\n".join(output)

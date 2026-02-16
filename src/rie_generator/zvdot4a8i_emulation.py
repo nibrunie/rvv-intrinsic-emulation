@@ -36,7 +36,7 @@ from .core import (
 )
 
 
-def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationType, wadd_op: OperationType, lmul: LMULType) -> Node:
+def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationType, wadd_op: OperationType, lmul: LMULType, tail_policy: TailPolicy, mask_policy: MaskPolicy, vm: Node = None) -> Node:
     """Common dot product emulation pipeline.
 
     Args:
@@ -177,7 +177,7 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
 
     # Step 8: Final single-width addition with accumulator (vd)
     result = Operation(result_32_fmt, OperationDesciptor(OperationType.ADD),
-                       partial_sum, vd, vl)
+                       partial_sum, vd, vl, tail_policy=tail_policy, mask_policy=mask_policy, dst=vd, vm=vm)
 
     return result
 
@@ -188,11 +188,13 @@ VALID_32BIT_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4]
 
 
 def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = False, definitions: bool = True,
-                                  lmul_filter: list = None):
+                                  lmul_filter: list = None, tail_policy_filter: list = None, mask_policy_filter: list = None):
     """Generate all Zvdot4a8i instruction emulations.
 
     Args:
         lmul_filter: if set, only generate for these LMULType values
+        tail_policy_filter: if set, only generate for these TailPolicy values
+        mask_policy_filter: if set, only generate for these MaskPolicy values
 
     Generates emulation code for:
       - vdota4.vv / vdota4.vx   (signed-signed)
@@ -204,109 +206,121 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
 
     vl_type = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
     vl = Input(vl_type, 3, name="vl")
+    all_tail_policies = [TailPolicy.UNDISTURBED, TailPolicy.AGNOSTIC]
+    all_mask_policies = [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC]
 
     output.append("#include <stdint.h>\n")
     output.append("#include <riscv_vector.h>\n")
     output.append("#include <stddef.h>\n")
 
     lmuls = [l for l in VALID_32BIT_LMULS if lmul_filter is None or l in lmul_filter]
+    tail_policies = [t for t in all_tail_policies if tail_policy_filter is None or t in tail_policy_filter]
+    mask_policies = [m for m in all_mask_policies if mask_policy_filter is None or m in mask_policy_filter]
 
     for lmul in lmuls:
-        vint32_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, lmul)
-        vuint32_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, lmul)
-        scalar_u32_t = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U32, lmul_type=None)
+        for tail_policy in tail_policies:
+            for mask_policy in mask_policies:
+                vint32_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, lmul)
+                vuint32_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, lmul)
+                scalar_u32_t = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U32, lmul_type=None)
+                vbooln_t = NodeFormatDescriptor(NodeFormatType.MASK, EltType.U32, lmul)
 
-        # --- Inputs ---
-        vs2_u = Input(vuint32_t, 0, name="vs2")
-        vs1_u = Input(vuint32_t, 1, name="vs1")
-        vd_u  = Input(vuint32_t, 2, name="vd")
-        rs1_u = Input(scalar_u32_t, 1, name="rs1")
+                # --- Inputs ---
+                vs2_u = Input(vuint32_t, 0, name="vs2")
+                vs1_u = Input(vuint32_t, 1, name="vs1")
+                vd_u  = Input(vuint32_t, 2, name="vd")
+                rs1_u = Input(scalar_u32_t, 1, name="rs1")
 
-        vs2_s = Input(vint32_t, 0, name="vs2")
-        vs1_s = Input(vint32_t, 1, name="vs1")
-        vd_s  = Input(vint32_t, 2, name="vd")
-        rs1_s = Input(scalar_u32_t, 1, name="rs1")
+                vs2_s = Input(vint32_t, 0, name="vs2")
+                vs1_s = Input(vint32_t, 1, name="vs1")
+                vd_s  = Input(vint32_t, 2, name="vd")
+                rs1_s = Input(scalar_u32_t, 1, name="rs1")
 
-        zvdot4a8i_insns = []
+                # vd_dst = Input(vint32_t, -1, name="vd")
+                vm = Input(vbooln_t, -2, name="vm")
+                
+                # dst = vd_dst if tail_policy == TailPolicy.UNDISTURBED or mask_policy == MaskPolicy.UNDISTURBED else None
 
-        # --- vdota4u: unsigned-unsigned ---
-        # vv
-        proto_dota4u_vv = Operation(
-            vuint32_t, OperationDesciptor(OperationType.DOTA4U),
-            vs2_u, vs1_u, vl,
-            dst=vd_u, tail_policy=TailPolicy.UNDISTURBED
-        )
-        emul_dota4u_vv = dot4_pipeline(vs2_u, vs1_u, vd_u, vl, OperationType.WMULU, OperationType.WADDU, lmul)
-        zvdot4a8i_insns.append((proto_dota4u_vv, emul_dota4u_vv))
+                zvdot4a8i_insns = []
 
-        # vx: use vector-scalar widening multiply directly
-        proto_dota4u_vx = Operation(
-            vuint32_t, OperationDesciptor(OperationType.DOTA4U),
-            vs2_u, rs1_u, vl,
-            dst=vd_u, tail_policy=TailPolicy.UNDISTURBED
-        )
-        emul_dota4u_vx = dot4_pipeline(vs2_u, rs1_u, vd_u, vl, OperationType.WMULU, OperationType.WADDU, lmul)
-        zvdot4a8i_insns.append((proto_dota4u_vx, emul_dota4u_vx))
+                # --- vdota4u: unsigned-unsigned ---
+                # vv
+                proto_dota4u_vv = Operation(
+                    vuint32_t, OperationDesciptor(OperationType.DOTA4U),
+                    vd_u, vs2_u, vs1_u, vl,
+                    dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
+                )
+                emul_dota4u_vv = dot4_pipeline(vs2_u, vs1_u, vd_u, vl, OperationType.WMULU, OperationType.WADDU, lmul, tail_policy, mask_policy, vm)
+                zvdot4a8i_insns.append((proto_dota4u_vv, emul_dota4u_vv))
 
-        # --- vdota4: signed-signed ---
-        # vv
-        proto_dota4_vv = Operation(
-            vint32_t, OperationDesciptor(OperationType.DOTA4),
-            vs2_s, vs1_s, vl,
-            dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
-        )
-        emul_dota4_vv = dot4_pipeline(vs2_s, vs1_s, vd_s, vl, OperationType.WMUL, OperationType.WADD, lmul)
-        zvdot4a8i_insns.append((proto_dota4_vv, emul_dota4_vv))
+                # vx: use vector-scalar widening multiply directly
+                proto_dota4u_vx = Operation(
+                    vuint32_t, OperationDesciptor(OperationType.DOTA4U),
+                    vd_u, vs2_u, rs1_u, vl,
+                    dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
+                )
+                emul_dota4u_vx = dot4_pipeline(vs2_u, rs1_u, vd_u, vl, OperationType.WMULU, OperationType.WADDU, lmul, tail_policy, mask_policy, vm)
+                zvdot4a8i_insns.append((proto_dota4u_vx, emul_dota4u_vx))
 
-        # vx
-        proto_dota4_vx = Operation(
-            vint32_t, OperationDesciptor(OperationType.DOTA4),
-            vs2_s, rs1_s, vl,
-            dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
-        )
-        emul_dota4_vx = dot4_pipeline(vs2_s, rs1_s, vd_s, vl, OperationType.WMUL, OperationType.WADD, lmul)
-        zvdot4a8i_insns.append((proto_dota4_vx, emul_dota4_vx))
+                # --- vdota4: signed-signed ---
+                # vv
+                proto_dota4_vv = Operation(
+                    vint32_t, OperationDesciptor(OperationType.DOTA4),
+                    vd_s, vs2_s, vs1_s, vl,
+                    dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
+                )
+                emul_dota4_vv = dot4_pipeline(vs2_s, vs1_s, vd_s, vl, OperationType.WMUL, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                zvdot4a8i_insns.append((proto_dota4_vv, emul_dota4_vv))
 
-        # --- vdota4su: signed(vs2)-unsigned(vs1) ---
-        # vv
-        proto_dota4su_vv = Operation(
-            vint32_t, OperationDesciptor(OperationType.DOTA4SU),
-            vs2_s, vs1_u, vl,
-            dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
-        )
-        emul_dota4su_vv = dot4_pipeline(vs2_s, vs1_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul)
-        zvdot4a8i_insns.append((proto_dota4su_vv, emul_dota4su_vv))
+                # vx
+                proto_dota4_vx = Operation(
+                    vint32_t, OperationDesciptor(OperationType.DOTA4),
+                    vd_s, vs2_s, rs1_s, vl,
+                    dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
+                )
+                emul_dota4_vx = dot4_pipeline(vs2_s, rs1_s, vd_s, vl, OperationType.WMUL, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                zvdot4a8i_insns.append((proto_dota4_vx, emul_dota4_vx))
 
-        # vx
-        proto_dota4su_vx = Operation(
-            vint32_t, OperationDesciptor(OperationType.DOTA4SU),
-            vs2_s, rs1_u, vl,
-            dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
-        )
-        emul_dota4su_vx = dot4_pipeline(vs2_s, rs1_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul)
-        zvdot4a8i_insns.append((proto_dota4su_vx, emul_dota4su_vx))
+                # --- vdota4su: signed(vs2)-unsigned(vs1) ---
+                # vv
+                proto_dota4su_vv = Operation(
+                    vint32_t, OperationDesciptor(OperationType.DOTA4SU),
+                    vd_s, vs2_s, vs1_u, vl,
+                    dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
+                )
+                emul_dota4su_vv = dot4_pipeline(vs2_s, vs1_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                zvdot4a8i_insns.append((proto_dota4su_vv, emul_dota4su_vv))
 
-        # --- vdota4us: unsigned(vs2)-signed(rs1), vx only ---
-        # vwmulsu_vx(vs2, rs1) treats vs2 as signed and rs1 as unsigned.
-        # We need unsigned(vs2) * signed(rs1), so we use swapped operand order.
-        proto_dota4us_vx = Operation(
-            vint32_t, OperationDesciptor(OperationType.DOTA4US),
-            vs2_u, rs1_s, vl,
-            dst=vd_s, tail_policy=TailPolicy.UNDISTURBED
-        )
-        # Pass rs1 first (signed) and vs2 second (unsigned) for vwmulsu
-        emul_dota4us_vx = dot4_pipeline(rs1_s, vs2_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul)
-        zvdot4a8i_insns.append((proto_dota4us_vx, emul_dota4us_vx))
+                # vx
+                proto_dota4su_vx = Operation(
+                    vint32_t, OperationDesciptor(OperationType.DOTA4SU),
+                    vd_s, vs2_s, rs1_u, vl,
+                    dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
+                )
+                emul_dota4su_vx = dot4_pipeline(vs2_s, rs1_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                zvdot4a8i_insns.append((proto_dota4su_vx, emul_dota4su_vx))
 
-        if prototypes:
-            output.append(f"// Zvdot4a8i prototypes (LMUL={LMULType.to_string(lmul)})")
-            for proto, _ in zvdot4a8i_insns:
-                output.append(generate_intrinsic_prototype(proto))
+                # --- vdota4us: unsigned(vs2)-signed(rs1), vx only ---
+                # vwmulsu_vx(vs2, rs1) treats vs2 as signed and rs1 as unsigned.
+                # We need unsigned(vs2) * signed(rs1), so we use swapped operand order.
+                proto_dota4us_vx = Operation(
+                    vint32_t, OperationDesciptor(OperationType.DOTA4US),
+                    vd_s, vs2_u, rs1_s, vl,
+                    dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
+                )
+                # Pass rs1 first (signed) and vs2 second (unsigned) for vwmulsu
+                emul_dota4us_vx = dot4_pipeline(rs1_s, vs2_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                zvdot4a8i_insns.append((proto_dota4us_vx, emul_dota4us_vx))
 
-        if definitions:
-            output.append(f"\n// Zvdot4a8i definitions (LMUL={LMULType.to_string(lmul)})")
-            for proto, emul in zvdot4a8i_insns:
-                output.append(generate_intrinsic_from_operation(proto, emul, attributes=attributes))
+                if prototypes:
+                    output.append(f"// Zvdot4a8i prototypes (LMUL={LMULType.to_string(lmul)})")
+                    for proto, _ in zvdot4a8i_insns:
+                        output.append(generate_intrinsic_prototype(proto))
+
+                if definitions:
+                    output.append(f"\n// Zvdot4a8i definitions (LMUL={LMULType.to_string(lmul)})")
+                    for proto, emul in zvdot4a8i_insns:
+                        output.append(generate_intrinsic_from_operation(proto, emul, attributes=attributes))
 
     return "\n".join(output)
 
@@ -320,8 +334,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--attributes", nargs="+", default=[], help="Attributes to add to the generated code")
-    parser.add_argument("-p", "--prototype", default=False, action="store", type=bool, help="generate prototypes")
-    parser.add_argument("-d", "--definition", default=True, action="store", type=bool, help="generate definitions")
+    parser.add_argument("-p", "--prototypes", default=False, action="store", type=bool, help="generate prototypes")
+    parser.add_argument("-d", "--definitions", default=True, action="store", type=bool, help="generate definitions")
     args = parser.parse_args()
 
-    main(attributes=args.attributes, prototypes=args.prototype, definitions=args.definition)
+    main(attributes=args.attributes, prototypes=args.prototypes, definitions=args.definitions)

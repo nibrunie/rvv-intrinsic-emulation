@@ -475,7 +475,7 @@ def generate_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -
         elif op.node_format.node_format_type == NodeFormatType.VECTOR or any(arg.node_format.node_format_type == NodeFormatType.VECTOR for arg in op.args):
             # generate intrinsic call
             intrinsic_arg_list = [generate_operation(code, arg, memoization_map) for arg in op.args]
-            if op.tail_policy == TailPolicy.UNDISTURBED or op.mask_policy == MaskPolicy.UNDISTURBED:
+            if (op.tail_policy == TailPolicy.UNDISTURBED or op.mask_policy == MaskPolicy.UNDISTURBED):
                 assert op.dst is not None
                 intrinsic_arg_list.insert(0, generate_operation(code, op.dst, memoization_map))
             if op.vm is not None:
@@ -557,7 +557,9 @@ def generate_intrinsic_from_operation(prototype: Operation, emulation: Operation
             return f"op{src.index}"
     src_list = [f"{src_type} {get_src_name(src)}" for src, src_type in zip(prototype.args, src_types)]
     memoisation_map = {src: get_src_name(src) for src in prototype.args}
-    if prototype.tail_policy == TailPolicy.UNDISTURBED or prototype.mask_policy == MaskPolicy.UNDISTURBED:
+    # if any tail/mask policy is set to undisturbed and the destination is not already an argument
+    # (e.g. destructive MAC operations) then it needs to be added before all arguments
+    if (prototype.tail_policy == TailPolicy.UNDISTURBED or prototype.mask_policy == MaskPolicy.UNDISTURBED) and not prototype.dst in prototype.args:
         assert prototype.dst is not None
         src_list.insert(0, f"{dst_type} {get_src_name(prototype.dst)}")
         memoisation_map[prototype.dst] = get_src_name(prototype.dst)
