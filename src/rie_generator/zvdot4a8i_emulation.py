@@ -207,7 +207,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
     vl_type = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
     vl = Input(vl_type, 3, name="vl")
     all_tail_policies = [TailPolicy.UNDISTURBED, TailPolicy.AGNOSTIC]
-    all_mask_policies = [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC]
+    all_mask_policies = [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC, MaskPolicy.UNMASKED]
 
     output.append("#include <stdint.h>\n")
     output.append("#include <riscv_vector.h>\n")

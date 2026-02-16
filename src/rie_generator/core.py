@@ -290,6 +290,7 @@ class TailPolicy(Enum):
 class MaskPolicy(Enum):
     AGNOSTIC = auto()
     UNDISTURBED = auto()
+    UNMASKED = auto()
     UNDEFINED = auto()
     
     
@@ -444,7 +445,7 @@ def generate_intrinsic_prototype(prototype: Operation) -> str:
         assert prototype.dst is not None
         src_types = [generate_node_format_type_string(prototype.dst.node_format)] + src_types
     # in rvv-intrinsics-doc, vm come before tail (arguments order)
-    if prototype.mask_policy != MaskPolicy.UNDEFINED:
+    if prototype.mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED):
         src_types = [generate_node_format_type_string(prototype.vm.node_format)] + src_types
     prototype = f"{dst_type} {intrinsic_name}({', '.join(src_types)})"
     return f"{prototype};"

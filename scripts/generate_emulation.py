@@ -37,6 +37,7 @@ TAIL_POLICY_MAP = {
 MASK_POLICY_MAP = {
     "mu": MaskPolicy.UNDISTURBED,
     "ma": MaskPolicy.AGNOSTIC,
+    "um": MaskPolicy.UNMASKED,
 }
 
 
@@ -104,7 +105,7 @@ def main():
         nargs='+',
         choices=list(MASK_POLICY_MAP.keys()),
         default=None,
-        help='Mask policies to generate (default: all). Values: mu (undisturbed), ma (agnostic)'
+        help='Mask policies to generate (default: all). Values: mu (undisturbed), ma (agnostic), um (unmasked)'
     )
     args = parser.parse_args()
     
