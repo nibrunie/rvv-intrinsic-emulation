@@ -406,7 +406,11 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     intrinsic_type_tag = generate_intrinsic_type_tag(prototype.node_format)
     # building operand type descriptor (vv, vx, vi)
     operand_type_descriptor = ""
-    for arg in prototype.args:
+    for (index, arg) in enumerate(prototype.args):
+        if len(prototype.args) > 2 and index == 0:
+            # for 3-operand instructions (e.g. vfmadd or vwmacc), the first operand is never
+            # described in the name suffix
+            continue
         if arg.node_format.node_format_type == NodeFormatType.VECTOR:
             # w for wide, v for vector
             # w is not used for some single operand operations (e.g. reinterpret)
