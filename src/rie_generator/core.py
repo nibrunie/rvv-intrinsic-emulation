@@ -598,8 +598,3 @@ def expand_reinterpret_cast(source: Operation, cast_to_type: NodeFormatDescripto
         source = Operation(cast_to_type, OperationDesciptor(OperationType.REINTERPRET), source)
 
     return source
-        
-        
-
-        
-    
