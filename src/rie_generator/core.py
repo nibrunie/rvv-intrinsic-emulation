@@ -21,6 +21,32 @@ class EltType(Enum):
     SIZE_T = auto()
     PLACEHOLDER = auto()
 
+
+    @staticmethod
+    def is_signed(elt_type: 'EltType') -> bool:
+        return elt_type in [EltType.S8, EltType.S16, EltType.S32, EltType.S64]
+
+    @staticmethod
+    def inverse_sign(elt_type: 'EltType') -> 'EltType':
+        if elt_type == EltType.U8:
+            return EltType.S8
+        elif elt_type == EltType.U16:
+            return EltType.S16
+        elif elt_type == EltType.U32:
+            return EltType.S32
+        elif elt_type == EltType.U64:
+            return EltType.S64
+        elif elt_type == EltType.S8:
+            return EltType.U8
+        elif elt_type == EltType.S16:
+            return EltType.U16
+        elif elt_type == EltType.S32:
+            return EltType.U32
+        elif elt_type == EltType.S64:
+            return EltType.U64
+        else:
+            raise ValueError(f"Invalid element type: {elt_type}")
+
 class LMULType(Enum):
     MF8 = auto()
     MF4 = auto()
@@ -376,7 +402,9 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     operand_type_descriptor = ""
     for arg in prototype.args:
         if arg.node_format.node_format_type == NodeFormatType.VECTOR:
-            if element_size(arg.node_format.elt_type) > element_size(prototype.node_format.elt_type):
+            # w for wide, v for vector
+            # w is not used for some single operand operations (e.g. reinterpret)
+            if len(prototype.args) > 1 and element_size(arg.node_format.elt_type) > element_size(prototype.node_format.elt_type):
                 operand_type_descriptor += "w"
             else: # element_size(args.node_format.elt_type) == element_size(prototype.node_format.elt_type):
                 operand_type_descriptor += "v"
@@ -542,3 +570,24 @@ def generate_intrinsic_from_operation(prototype: Operation, emulation: Operation
     result = generate_operation(code, emulation, memoisation_map)
     footer = f"  return {result};\n}}"
     return header + code.code + footer
+
+def expand_reinterpret_cast(source: Operation, cast_to_type: NodeFormatDescriptor) -> Operation:
+    if source.node_format == cast_to_type or source.node_format.node_format_type != NodeFormatType.VECTOR:
+        return source
+
+    # Reinterpret cast does not support change of both signedness and element width at once
+    # so we need to split them into two operations
+    if EltType.is_signed(source.node_format.elt_type) != EltType.is_signed(cast_to_type.elt_type):
+        inversed_sign_format = NodeFormatDescriptor(source.node_format.node_format_type, EltType.inverse_sign(source.node_format.elt_type), source.node_format.lmul_type)
+        source = Operation(inversed_sign_format, OperationDesciptor(OperationType.REINTERPRET), source)
+
+    assert EltType.is_signed(source.node_format.elt_type) == EltType.is_signed(cast_to_type.elt_type)
+    if element_size(source.node_format.elt_type) != element_size(cast_to_type.elt_type):
+        source = Operation(cast_to_type, OperationDesciptor(OperationType.REINTERPRET), source)
+
+    return source
+        
+        
+
+        
+    

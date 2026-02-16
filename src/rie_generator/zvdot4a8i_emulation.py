@@ -26,6 +26,7 @@ from .core import (
     get_scalar_format,
     element_size,
     EltType,
+    expand_reinterpret_cast,
     LMULType,
     OperationType,
     generate_intrinsic_prototype,
@@ -51,6 +52,7 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     lmul_x2 = LMULType.multiply(lmul, 2)
     # SEW=8 at original LMUL (same register group as 32-bit, 4x more elements)
     u8_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, lmul)
+    s8_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S8, lmul)
     # SEW=16 at 2*LMUL (widening multiply result)
     u16_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U16, lmul_x2)
     s16_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S16, lmul_x2)
@@ -85,6 +87,11 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     scalar_u32_fmt = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U32)
     vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
 
+    vs2_is_signed = wmul_op in (OperationType.WMUL, OperationType.WMULSU)
+    vs1_is_signed = wmul_op in (OperationType.WMUL, OperationType.WMULSU)
+    vs1_fmt = s8_fmt if vs1_is_signed else u8_fmt
+    vs2_fmt = s8_fmt if vs2_is_signed else u8_fmt
+
     if vs1.node_format.node_format_type is NodeFormatType.SCALAR:
         vs1 = Operation(u32_fmt, OperationDesciptor(OperationType.MV), vs1, vl)
     if vs2.node_format.node_format_type is NodeFormatType.SCALAR:
@@ -95,10 +102,12 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     assert vs1.node_format.node_format_type is NodeFormatType.VECTOR
 
     # Step 0: Reinterpret vs1 as u8
-    vs1_u8 = Operation(u8_fmt, OperationDesciptor(OperationType.REINTERPRET), vs1)
+    #vs1_u8 = Operation(u8_fmt, OperationDesciptor(OperationType.REINTERPRET), vs1)
+    vs1_e8 = expand_reinterpret_cast(vs1, vs1_fmt)
     # Since vs2/vs1 might be swapped, we also need to check whether vs2/rs2 needs to
     # be reinterpreted
-    vs2_u8 = Operation(u8_fmt, OperationDesciptor(OperationType.REINTERPRET), vs2)
+    #vs2_u8 = Operation(u8_fmt, OperationDesciptor(OperationType.REINTERPRET), vs2)
+    vs2_e8 = expand_reinterpret_cast(vs2, vs2_fmt)
 
     # Step 1: vl_x4 = 4 * vl (for SEW=8 operations)
     vl_x4 = Operation(vl_fmt, OperationDesciptor(OperationType.MUL),
@@ -113,7 +122,7 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     # Step 1: Widening multiply 8-bit to 16-bit
     # SEW=8, LMUL=original, vl=4*original_vl
     products = Operation(prod_16_x2_fmt, OperationDesciptor(wmul_op),
-                         vs2_u8, vs1_u8, vl_x4)
+                         vs2_e8, vs1_e8, vl_x4)
 
     # reinterpret products as SEW=64  with 2x original LMUL (and original vl, since 64 is twice the original 32-bit SEW)
     products = Operation(result_64_x2_fmt, OperationDesciptor(OperationType.REINTERPRET), products)
