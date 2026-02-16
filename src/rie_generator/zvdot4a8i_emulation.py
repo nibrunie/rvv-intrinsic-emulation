@@ -23,8 +23,6 @@ from .core import (
     Immediate,
     Input,
     Node,
-    get_scalar_format,
-    element_size,
     EltType,
     expand_reinterpret_cast,
     LMULType,
@@ -36,7 +34,18 @@ from .core import (
 )
 
 
-def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationType, wadd_op: OperationType, lmul: LMULType, tail_policy: TailPolicy, mask_policy: MaskPolicy, vm: Node = None) -> Node:
+def dot4_pipeline(
+        vs2: Node,
+        vs1: Node,
+        vd: Node,
+        vl: Node,
+        wmul_op: OperationType,
+        wadd_op: OperationType,
+        lmul: LMULType,
+        tail_policy: TailPolicy,
+        mask_policy: MaskPolicy,
+        vm: Node = None
+    ) -> Node:
     """Common dot product emulation pipeline.
 
     Args:
@@ -47,6 +56,9 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
         wmul_op: widening multiply operation type (WMUL, WMULU, WMULSU)
         wadd_op: widening add operation type (WADD, WADDU)
         lmul: original LMUL for 32-bit elements
+        tail_policy: tail policy
+        mask_policy: mask policy
+        vm: mask
     """
     # Derived formats
     lmul_x2 = LMULType.multiply(lmul, 2)
@@ -59,9 +71,6 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     # SEW=32 at original LMUL (narrowing result)
     u32_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, lmul)
     s32_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, lmul)
-    # SEW=64 at original LMUL (narrowing result)
-    u64_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U64, lmul)
-    s64_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S64, lmul)
     # SEW=16 at original LMUL (for widening add sources)
     u16_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U16, lmul)
     s16_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S16, lmul)
@@ -80,7 +89,6 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     sum_32_x2_fmt = s32_x2_fmt if is_result_signed else u32_x2_fmt
     result_32_fmt = vd.node_format
 
-    result_64_fmt = s64_fmt if is_result_signed else u64_fmt
     result_64_x2_fmt = s64_x2_fmt if is_result_signed else u64_x2_fmt
 
     # Scalar formats for shift amounts and vl multiplier
@@ -115,9 +123,6 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     # Step 1 (cont.): vl_x2 = 2 * vl (for SEW=16 operations)
     vl_x2 = Operation(vl_fmt, OperationDesciptor(OperationType.MUL),
                        vl, Immediate(vl_fmt, 2))
-
-    vl_half = Operation(vl_fmt, OperationDesciptor(OperationType.DIV),
-                        vl, Immediate(vl_fmt, 2))
 
     # Step 1: Widening multiply 8-bit to 16-bit
     # SEW=8, LMUL=original, vl=4*original_vl
@@ -192,6 +197,9 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
     """Generate all Zvdot4a8i instruction emulations.
 
     Args:
+        attributes: list of attributes to add to the generated code
+        prototypes: if True, generate prototypes only
+        definitions: if True, generate definitions only
         lmul_filter: if set, only generate for these LMULType values
         tail_policy_filter: if set, only generate for these TailPolicy values
         mask_policy_filter: if set, only generate for these MaskPolicy values
