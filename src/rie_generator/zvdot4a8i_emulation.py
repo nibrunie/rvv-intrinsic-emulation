@@ -88,7 +88,7 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
 
     vs2_is_signed = wmul_op in (OperationType.WMUL, OperationType.WMULSU)
-    vs1_is_signed = wmul_op in (OperationType.WMUL, OperationType.WMULSU)
+    vs1_is_signed = wmul_op in (OperationType.WMUL, OperationType.WMUL)
     vs1_fmt = s8_fmt if vs1_is_signed else u8_fmt
     vs2_fmt = s8_fmt if vs2_is_signed else u8_fmt
 
