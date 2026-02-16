@@ -127,16 +127,22 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     # reinterpret products as SEW=64  with 2x original LMUL (and original vl, since 64 is twice the original 32-bit SEW)
     products = Operation(result_64_x2_fmt, OperationDesciptor(OperationType.REINTERPRET), products)
 
+    # narrowing shift only operates on unsigned element, so casting might be required here
+    products = expand_reinterpret_cast(products, u64_x2_fmt)
+
     # Step 2: Extract high products via narrow right shift by 32
     # Source: products viewed as SEW=64 at 2*LMUL, result: SEW=32 at LMUL
     shift_32 = Immediate(scalar_u32_fmt, 32)
-    high_products = Operation(prod_32_fmt, OperationDesciptor(OperationType.NSRL),
+    high_products = Operation(u32_fmt, OperationDesciptor(OperationType.NSRL),
                               products, shift_32, vl)
 
     # Step 3: Extract low products via narrow right shift by 0
     shift_0 = Immediate(scalar_u32_fmt, 0)
-    low_products = Operation(prod_32_fmt, OperationDesciptor(OperationType.NSRL),
+    low_products = Operation(u32_fmt, OperationDesciptor(OperationType.NSRL),
                              products, shift_0, vl)
+
+    high_products = expand_reinterpret_cast(high_products, prod_32_fmt)
+    low_products = expand_reinterpret_cast(low_products, prod_32_fmt)
 
     high_products = Operation(sum_16_fmt, OperationDesciptor(OperationType.REINTERPRET),
                               high_products)
@@ -151,14 +157,19 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     # Reinterpret sums as SEW=64 at 2*LMUL
     sums = Operation(result_64_x2_fmt, OperationDesciptor(OperationType.REINTERPRET), sums)
 
+    sums = expand_reinterpret_cast(sums, u64_x2_fmt)
+
     # Step 5: Extract high sums via narrow right shift by 32
     # Source: sums viewed as SEW=64 at 2*LMUL, result: SEW=32 at LMUL
-    high_sums = Operation(result_32_fmt, OperationDesciptor(OperationType.NSRL),
+    high_sums = Operation(u32_fmt, OperationDesciptor(OperationType.NSRL),
                           sums, shift_32, vl)
 
     # Step 6: Extract low sums via narrow right shift by 0
-    low_sums = Operation(result_32_fmt, OperationDesciptor(OperationType.NSRL),
+    low_sums = Operation(u32_fmt, OperationDesciptor(OperationType.NSRL),
                          sums, shift_0, vl)
+
+    high_sums = expand_reinterpret_cast(high_sums, result_32_fmt)
+    low_sums = expand_reinterpret_cast(low_sums, result_32_fmt)
 
     # Step 7: Single-width addition of high and low sums (SEW=32)
     partial_sum = Operation(result_32_fmt, OperationDesciptor(OperationType.ADD),
