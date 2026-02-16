@@ -287,12 +287,17 @@ class TailPolicy(Enum):
     UNDISTURBED = auto()
     UNDEFINED = auto()
 
+    def to_string(self):
+        return self.name.lower()
+
 class MaskPolicy(Enum):
     AGNOSTIC = auto()
     UNDISTURBED = auto()
     UNMASKED = auto()
     UNDEFINED = auto()
-    
+
+    def to_string(self):
+        return self.name.lower()
     
 
 class Operation(Node):

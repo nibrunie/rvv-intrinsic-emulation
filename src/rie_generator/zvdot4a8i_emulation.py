@@ -312,13 +312,17 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 emul_dota4us_vx = dot4_pipeline(rs1_s, vs2_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
                 zvdot4a8i_insns.append((proto_dota4us_vx, emul_dota4us_vx))
 
+                lmul_str = LMULType.to_string(lmul)
+                tail_policy_str = TailPolicy.to_string(tail_policy)
+                mask_policy_str = MaskPolicy.to_string(mask_policy)
+
                 if prototypes:
-                    output.append(f"// Zvdot4a8i prototypes (LMUL={LMULType.to_string(lmul)})")
+                    output.append(f"// Zvdot4a8i prototypes (LMUL={lmul_str}), tail_policy={tail_policy_str}, mask_policy={mask_policy_str}")
                     for proto, _ in zvdot4a8i_insns:
                         output.append(generate_intrinsic_prototype(proto))
 
                 if definitions:
-                    output.append(f"\n// Zvdot4a8i definitions (LMUL={LMULType.to_string(lmul)})")
+                    output.append(f"\n// Zvdot4a8i definitions (LMUL={lmul_str}), tail_policy={tail_policy_str}, mask_policy={mask_policy_str}")
                     for proto, emul in zvdot4a8i_insns:
                         output.append(generate_intrinsic_from_operation(proto, emul, attributes=attributes))
 
