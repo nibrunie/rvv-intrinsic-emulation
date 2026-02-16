@@ -331,8 +331,10 @@ def int_type_to_vector_type(int_type: EltType, lmul_type: LMULType) -> str:
         return f"vint32{LMULType.to_string(lmul_type)}_t"
     elif int_type == EltType.U64:
         return f"vuint64{LMULType.to_string(lmul_type)}_t"
+    elif int_type == EltType.S64:
+        return f"vint64{LMULType.to_string(lmul_type)}_t"
     else:
-        raise ValueError("Invalid integer type")
+        raise ValueError(f"Invalid integer type: {int_type}")
 
 def vector_type_to_mask_type(node_format: NodeFormatDescriptor) -> str:
     elt_size = element_size(node_format.elt_type)
@@ -374,7 +376,11 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     operand_type_descriptor = ""
     for arg in prototype.args:
         if arg.node_format.node_format_type == NodeFormatType.VECTOR:
-            operand_type_descriptor += "v"
+            if element_size(arg.node_format.elt_type) > element_size(prototype.node_format.elt_type):
+                operand_type_descriptor += "w"
+            else: # element_size(args.node_format.elt_type) == element_size(prototype.node_format.elt_type):
+                operand_type_descriptor += "v"
+                
         elif arg.node_format.node_format_type == NodeFormatType.SCALAR:
             operand_type_descriptor += "x"
         elif arg.node_format.node_format_type == NodeFormatType.IMMEDIATE:

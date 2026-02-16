@@ -57,12 +57,18 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     # SEW=32 at original LMUL (narrowing result)
     u32_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, lmul)
     s32_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, lmul)
+    # SEW=64 at original LMUL (narrowing result)
+    u64_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U64, lmul)
+    s64_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S64, lmul)
     # SEW=16 at original LMUL (for widening add sources)
     u16_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U16, lmul)
     s16_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S16, lmul)
     # SEW=32 at 2*LMUL (widening add result)
     u32_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, lmul_x2)
     s32_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, lmul_x2)
+    # SEW=64 at 2*LMUL (narrowing result)
+    u64_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U64, lmul_x2)
+    s64_x2_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S64, lmul_x2)
 
     # Choose signed/unsigned formats based on multiply type
     is_result_signed = wmul_op in (OperationType.WMUL, OperationType.WMULSU)
@@ -71,6 +77,9 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     sum_16_fmt = s16_fmt if is_result_signed else u16_fmt
     sum_32_x2_fmt = s32_x2_fmt if is_result_signed else u32_x2_fmt
     result_32_fmt = vd.node_format
+
+    result_64_fmt = s64_fmt if is_result_signed else u64_fmt
+    result_64_x2_fmt = s64_x2_fmt if is_result_signed else u64_x2_fmt
 
     # Scalar formats for shift amounts and vl multiplier
     scalar_u32_fmt = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U32)
@@ -98,10 +107,16 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     vl_x2 = Operation(vl_fmt, OperationDesciptor(OperationType.MUL),
                        vl, Immediate(vl_fmt, 2))
 
+    vl_half = Operation(vl_fmt, OperationDesciptor(OperationType.DIV),
+                        vl, Immediate(vl_fmt, 2))
+
     # Step 1: Widening multiply 8-bit to 16-bit
     # SEW=8, LMUL=original, vl=4*original_vl
     products = Operation(prod_16_x2_fmt, OperationDesciptor(wmul_op),
                          vs2_u8, vs1_u8, vl_x4)
+
+    # reinterpret products as SEW=64  with 2x original LMUL (and original vl, since 64 is twice the original 32-bit SEW)
+    products = Operation(result_64_x2_fmt, OperationDesciptor(OperationType.REINTERPRET), products)
 
     # Step 2: Extract high products via narrow right shift by 32
     # Source: products viewed as SEW=64 at 2*LMUL, result: SEW=32 at LMUL
@@ -114,10 +129,18 @@ def dot4_pipeline(vs2: Node, vs1: Node, vd: Node, vl: Node, wmul_op: OperationTy
     low_products = Operation(prod_32_fmt, OperationDesciptor(OperationType.NSRL),
                              products, shift_0, vl)
 
+    high_products = Operation(sum_16_fmt, OperationDesciptor(OperationType.REINTERPRET),
+                              high_products)
+    low_products = Operation(sum_16_fmt, OperationDesciptor(OperationType.REINTERPRET),
+                              low_products)
+
     # Step 4: Widening addition of high and low products
     # Source: SEW=16 at LMUL, vl=2*original_vl, result: SEW=32 at 2*LMUL
     sums = Operation(sum_32_x2_fmt, OperationDesciptor(wadd_op),
                      high_products, low_products, vl_x2)
+
+    # Reinterpret sums as SEW=64 at 2*LMUL
+    sums = Operation(result_64_x2_fmt, OperationDesciptor(OperationType.REINTERPRET), sums)
 
     # Step 5: Extract high sums via narrow right shift by 32
     # Source: sums viewed as SEW=64 at 2*LMUL, result: SEW=32 at LMUL
