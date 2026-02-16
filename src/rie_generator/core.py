@@ -407,9 +407,10 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     # building operand type descriptor (vv, vx, vi)
     operand_type_descriptor = ""
     for (index, arg) in enumerate(prototype.args):
-        if len(prototype.args) > 2 and index == 0:
+        if len(prototype.args) > 3 and index == 0:
             # for 3-operand instructions (e.g. vfmadd or vwmacc), the first operand is never
             # described in the name suffix
+            # Note: 3-operand instructions have actually 4 operands when vl is taken into account
             continue
         if arg.node_format.node_format_type == NodeFormatType.VECTOR:
             # w for wide, v for vector
@@ -450,7 +451,7 @@ def generate_intrinsic_prototype(prototype: Operation) -> str:
     # generate prototype
     dst_type = generate_node_format_type_string(prototype.node_format)
     src_types = [generate_node_format_type_string(arg.node_format) for arg in prototype.args]
-    if prototype.tail_policy == TailPolicy.UNDISTURBED or prototype.mask_policy == MaskPolicy.UNDISTURBED:
+    if (prototype.tail_policy == TailPolicy.UNDISTURBED or prototype.mask_policy == MaskPolicy.UNDISTURBED) and prototype.dst not in prototype.args:
         assert prototype.dst is not None
         src_types = [generate_node_format_type_string(prototype.dst.node_format)] + src_types
     # in rvv-intrinsics-doc, vm come before tail (arguments order)
@@ -488,7 +489,7 @@ def generate_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -
             if (op.tail_policy == TailPolicy.UNDISTURBED or op.mask_policy == MaskPolicy.UNDISTURBED):
                 assert op.dst is not None
                 intrinsic_arg_list.insert(0, generate_operation(code, op.dst, memoization_map))
-            if op.vm is not None:
+            if op.mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED):
                 intrinsic_arg_list.insert(0, generate_operation(code, op.vm, memoization_map))
             
             call_op = f"{generate_intrinsic_name(op)}({', '.join(intrinsic_arg_list)})"
@@ -573,7 +574,7 @@ def generate_intrinsic_from_operation(prototype: Operation, emulation: Operation
         assert prototype.dst is not None
         src_list.insert(0, f"{dst_type} {get_src_name(prototype.dst)}")
         memoisation_map[prototype.dst] = get_src_name(prototype.dst)
-    if prototype.vm is not None:
+    if prototype.mask_policy not in [MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED]:
         src_list.insert(0, f"{generate_node_format_type_string(prototype.vm.node_format)} {get_src_name(prototype.vm)}")
         memoisation_map[prototype.vm] = get_src_name(prototype.vm)
     attributes_str = " ".join(attributes)
