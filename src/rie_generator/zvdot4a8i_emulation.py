@@ -254,7 +254,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 # --- vdota4u: unsigned-unsigned ---
                 # vv
                 proto_dota4u_vv = Operation(
-                    vuint32_t, OperationDesciptor(OperationType.DOTA4U),
+                    vuint32_t, OperationDesciptor(OperationType.DOT4AU),
                     vd_u, vs2_u, vs1_u, vl,
                     dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -263,7 +263,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
 
                 # vx: use vector-scalar widening multiply directly
                 proto_dota4u_vx = Operation(
-                    vuint32_t, OperationDesciptor(OperationType.DOTA4U),
+                    vuint32_t, OperationDesciptor(OperationType.DOT4AU),
                     vd_u, vs2_u, rs1_u, vl,
                     dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -273,7 +273,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 # --- vdota4: signed-signed ---
                 # vv
                 proto_dota4_vv = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOTA4),
+                    vint32_t, OperationDesciptor(OperationType.DOT4A),
                     vd_s, vs2_s, vs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -282,7 +282,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
 
                 # vx
                 proto_dota4_vx = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOTA4),
+                    vint32_t, OperationDesciptor(OperationType.DOT4A),
                     vd_s, vs2_s, rs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -292,7 +292,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 # --- vdota4su: signed(vs2)-unsigned(vs1) ---
                 # vv
                 proto_dota4su_vv = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOTA4SU),
+                    vint32_t, OperationDesciptor(OperationType.DOT4ASU),
                     vd_s, vs2_s, vs1_u, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -301,7 +301,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
 
                 # vx
                 proto_dota4su_vx = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOTA4SU),
+                    vint32_t, OperationDesciptor(OperationType.DOT4ASU),
                     vd_s, vs2_s, rs1_u, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -312,7 +312,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 # vwmulsu_vx(vs2, rs1) treats vs2 as signed and rs1 as unsigned.
                 # We need unsigned(vs2) * signed(rs1), so we use swapped operand order.
                 proto_dota4us_vx = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOTA4US),
+                    vint32_t, OperationDesciptor(OperationType.DOT4AUS),
                     vd_s, vs2_u, rs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )

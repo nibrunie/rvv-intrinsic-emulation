@@ -152,10 +152,10 @@ class OperationType(Enum):
     WMACCU = auto()
     WMACCSU = auto()
     WMACCUS = auto()
-    DOTA4 = auto()
-    DOTA4U = auto()
-    DOTA4SU = auto()
-    DOTA4US = auto()
+    DOT4A = auto()
+    DOT4AU = auto()
+    DOT4ASU = auto()
+    DOT4AUS = auto()
     WMUL = auto()
     WMULU = auto()
     WMULSU = auto()
@@ -211,14 +211,14 @@ class OperationType(Enum):
             return "wmaccsu"
         elif op_type == OperationType.WMACCUS:
             return "wmaccus"
-        elif op_type == OperationType.DOTA4:
-            return "dota4"
-        elif op_type == OperationType.DOTA4U:
-            return "dota4u"
-        elif op_type == OperationType.DOTA4SU:
-            return "dota4su"
-        elif op_type == OperationType.DOTA4US:
-            return "dota4us"
+        elif op_type == OperationType.DOT4A:
+            return "dot4a"
+        elif op_type == OperationType.DOT4AU:
+            return "dot4au"
+        elif op_type == OperationType.DOT4ASU:
+            return "dot4asu"
+        elif op_type == OperationType.DOT4AUS:
+            return "dot4aus"
         elif op_type == OperationType.WMUL:
             return "wmul"
         elif op_type == OperationType.WMULU:
