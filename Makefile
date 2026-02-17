@@ -1,85 +1,48 @@
-# RISC-V Zvbb vror* Emulation Library - Makefile
-# Requires RISC-V GCC with vector extension support
+# RIE Generator — Makefile
+# Generates emulation headers and compiles C sanity tests
 
-# Compiler configuration
-CC = riscv64-unknown-linux-gnu-gcc
-CFLAGS = -march=rv64gcv -O2 -Wall -Wextra -I./include
-LDFLAGS = -static
+# Configurable variables
+PYTHON    ?= python3
+CC         = riscv64-elf-gcc
+MARCH     ?= rv64gcv
+MABI      ?= lp64d
+CFLAGS    ?= -O2 -Wall -Wextra -Werror -ffreestanding
 
-# Paths
-TEST_SRC = tests/test_vror.c
-BENCH_SRC = bench/bench_vror.c
-TEST_BIN = tests/test_vror
-BENCH_BIN = bench/bench_vror
+GEN_SCRIPT = scripts/generate_emulation.py
+GEN_DIR    = tests/generated
+BUILD_DIR  = tests/build
 
-# Default target
-.PHONY: all
-all: test bench
+# Generation filters for tests (keep small for fast compile)
+ZVKB_GEN_FLAGS    = -e zvkb --lmul m1 --elt-width 32 --tail-policy tu --mask-policy um
+ZVDOT_GEN_FLAGS   = -e zvdot4a8i --lmul m1 --tail-policy tu --mask-policy um
 
-# Build test suite
-.PHONY: test-build
-test-build: $(TEST_BIN)
+# --- Targets ---
 
-$(TEST_BIN): $(TEST_SRC) include/zvbb_emu.h
-	@echo "Building test suite..."
-	$(CC) $(CFLAGS) $(TEST_SRC) -o $(TEST_BIN) $(LDFLAGS)
-	@echo "Test suite built: $(TEST_BIN)"
+.PHONY: all generate build clean
 
-# Build benchmark suite
-.PHONY: bench-build
-bench-build: $(BENCH_BIN)
+all: build
 
-$(BENCH_BIN): $(BENCH_SRC) include/zvbb_emu.h
-	@echo "Building benchmark suite..."
-	$(CC) $(CFLAGS) $(BENCH_SRC) -o $(BENCH_BIN) $(LDFLAGS)
-	@echo "Benchmark suite built: $(BENCH_BIN)"
+# Generate emulation headers from Python
+generate: $(GEN_DIR)/zvkb_emu.h $(GEN_DIR)/zvdot4a8i_emu.h
 
-# Run tests
-.PHONY: test
-test: test-build
-	@echo ""
-	@echo "Running test suite..."
-	@echo ""
-	./$(TEST_BIN)
+$(GEN_DIR)/zvkb_emu.h: $(GEN_SCRIPT) src/rie_generator/*.py | $(GEN_DIR)
+	$(PYTHON) $(GEN_SCRIPT) $(ZVKB_GEN_FLAGS) -o $@
 
-# Run benchmarks
-.PHONY: bench
-bench: bench-build
-	@echo ""
-	@echo "Running benchmarks..."
-	@echo ""
-	./$(BENCH_BIN)
+$(GEN_DIR)/zvdot4a8i_emu.h: $(GEN_SCRIPT) src/rie_generator/*.py | $(GEN_DIR)
+	$(PYTHON) $(GEN_SCRIPT) $(ZVDOT_GEN_FLAGS) -o $@
 
-# Clean build artifacts
-.PHONY: clean
+$(GEN_DIR) $(BUILD_DIR):
+	mkdir -p $@
+
+# Compile C sanity tests (compile-only, no runtime execution)
+build: $(BUILD_DIR)/test_zvkb.o $(BUILD_DIR)/test_zvdot4a8i.o
+
+$(BUILD_DIR)/test_zvkb.o: tests/test_zvkb.c $(GEN_DIR)/zvkb_emu.h | $(BUILD_DIR)
+	$(CC) -march=$(MARCH) -mabi=$(MABI) $(CFLAGS) -I$(GEN_DIR) -c $< -o $@
+
+$(BUILD_DIR)/test_zvdot4a8i.o: tests/test_zvdot4a8i.c $(GEN_DIR)/zvdot4a8i_emu.h | $(BUILD_DIR)
+	$(CC) -march=$(MARCH) -mabi=$(MABI) $(CFLAGS) -I$(GEN_DIR) -c $< -o $@
+
+# Clean all generated and built files
 clean:
-	@echo "Cleaning build artifacts..."
-	rm -f $(TEST_BIN) $(BENCH_BIN)
-	@echo "Clean complete."
-
-# Help target
-.PHONY: help
-help:
-	@echo "RISC-V Zvbb vror* Emulation Library - Makefile"
-	@echo ""
-	@echo "Available targets:"
-	@echo "  all         - Build test and benchmark suites (default)"
-	@echo "  test        - Build and run test suite"
-	@echo "  test-build  - Build test suite only"
-	@echo "  bench       - Build and run benchmark suite"
-	@echo "  bench-build - Build benchmark suite only"
-	@echo "  clean       - Remove build artifacts"
-	@echo "  help        - Show this help message"
-	@echo ""
-	@echo "Requirements:"
-	@echo "  - RISC-V GCC with vector extension support"
-	@echo "  - Target architecture: rv64gcv (RISC-V 64-bit with vector extension)"
-	@echo ""
-	@echo "Environment variables:"
-	@echo "  CC      - C compiler (default: riscv64-unknown-linux-gnu-gcc)"
-	@echo "  CFLAGS  - Additional compiler flags"
-	@echo ""
-	@echo "Examples:"
-	@echo "  make test              # Build and run tests"
-	@echo "  make bench             # Build and run benchmarks"
-	@echo "  make CC=clang test     # Use different compiler"
+	rm -rf $(GEN_DIR) $(BUILD_DIR)
