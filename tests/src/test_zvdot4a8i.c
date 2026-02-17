@@ -4,9 +4,9 @@
 #include <stdio.h>
 
 
-#define TEST_SIZE_N 8
-#define TEST_SIZE_M 8
-#define TEST_SIZE_K 8
+#define TEST_SIZE_N 128
+#define TEST_SIZE_M 64
+#define TEST_SIZE_K 32
 
 // implement a 8-bit integer matrix multipliy n x k x m
 
@@ -40,9 +40,11 @@ void matrix_multiply_intrinsics(uint32_t* out, uint32_t* acc, uint8_t* lhs, uint
     for (int j = 0; j < TEST_SIZE_N; j++) {
         size_t avl = TEST_SIZE_M;
         size_t vl = -1;
-        for (int i = 0; i < avl; i += vl) {
+        for (int i = 0; avl > 0; i += vl) {
             // out[i * TEST_SIZE_M + j] = acc[i * TEST_SIZE_M + j];
-            vl = __riscv_vsetvl_e8m1(avl);
+            vl = __riscv_vsetvl_e32m1(avl);
+	    avl -= vl;
+
             vuint32m1_t vout = __riscv_vlse32_v_u32m1(acc + i * TEST_SIZE_N + j, TEST_SIZE_N * sizeof(uint32_t), vl);
             // for (int k = 0; k < TEST_SIZE_K; k += 4) {
             //    out[i * TEST_SIZE_M + j] += (uint32_t) lhs[i * TEST_SIZE_K + k] * (uint32_t) rhs[k * TEST_SIZE_M + j];
@@ -51,15 +53,15 @@ void matrix_multiply_intrinsics(uint32_t* out, uint32_t* acc, uint8_t* lhs, uint
             //    out[i * TEST_SIZE_M + j] += (uint32_t) lhs[i * TEST_SIZE_K + k + 3] * (uint32_t) rhs[(k + 3) * TEST_SIZE_M + j];
             //}
             for (int k = 0; k < TEST_SIZE_K; k += 4) {
-                vuint32m1_t vlhs = __riscv_vlsse32_v_u32m1(((uint32_t*) lhs) + i * TEST_SIZE_K + k, TEST_SIZE_K, vl);
+                vuint32m1_t vlhs = __riscv_vlse32_v_u32m1((uint32_t*)(lhs + i * TEST_SIZE_K + k), TEST_SIZE_K, vl);
                 // building right hand side operand
-                uint32_t rhs = 0;
+                uint32_t rhs_4elts = 0;
                 for (int l = 0; l < 4; l++) {
-                    rhs += (uint32_t) rhs[(k + l) * TEST_SIZE_N + j] << (l * 8);
+                    rhs_4elts += (uint32_t) (rhs[(k + l) * TEST_SIZE_N + j]) << (l * 8);
                 }
-                vout = __riscv_vdot4au_vx_u32m1(vout, vlhs, rhs, vl);
+                vout = __riscv_vdot4au_vx_u32m1(vout, vlhs, rhs_4elts, vl);
             }
-            __riscv_vsse32_v_u32m1(out + i * TEST_SIZE_N + j, vout, TEST_SIZE_N * sizeof(uint32_t), vl);
+            __riscv_vsse32_v_u32m1(out + i * TEST_SIZE_N + j, TEST_SIZE_N * sizeof(uint32_t), vout, vl);
         }
     }
 }
