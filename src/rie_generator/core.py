@@ -21,6 +21,32 @@ class EltType(Enum):
     SIZE_T = auto()
     PLACEHOLDER = auto()
 
+
+    @staticmethod
+    def is_signed(elt_type: 'EltType') -> bool:
+        return elt_type in [EltType.S8, EltType.S16, EltType.S32, EltType.S64]
+
+    @staticmethod
+    def inverse_sign(elt_type: 'EltType') -> 'EltType':
+        if elt_type == EltType.U8:
+            return EltType.S8
+        elif elt_type == EltType.U16:
+            return EltType.S16
+        elif elt_type == EltType.U32:
+            return EltType.S32
+        elif elt_type == EltType.U64:
+            return EltType.S64
+        elif elt_type == EltType.S8:
+            return EltType.U8
+        elif elt_type == EltType.S16:
+            return EltType.U16
+        elif elt_type == EltType.S32:
+            return EltType.U32
+        elif elt_type == EltType.S64:
+            return EltType.U64
+        else:
+            raise ValueError(f"Invalid element type: {elt_type}")
+
 class LMULType(Enum):
     MF8 = auto()
     MF4 = auto()
@@ -47,8 +73,10 @@ class LMULType(Enum):
             return "m4"
         elif lmul_type == LMULType.M8:
             return "m8"
+        elif lmul_type is None:
+            return "undefined(None)"
         else:
-            raise ValueError("Invalid LMUL type")
+            raise ValueError(f"Invalid LMUL type: {lmul_type}")
 
     @staticmethod
     def to_value(lmul_type: 'LMULType') -> float:
@@ -68,6 +96,31 @@ class LMULType(Enum):
             return 8
         else:
             raise ValueError("Invalid LMUL type")
+
+    @staticmethod
+    def from_value(value: float) -> 'LMULType':
+        VALUE_MAP = {
+            0.125: LMULType.MF8,
+            0.25: LMULType.MF4,
+            0.5: LMULType.MF2,
+            1: LMULType.M1,
+            2: LMULType.M2,
+            4: LMULType.M4,
+            8: LMULType.M8,
+        }
+        if value not in VALUE_MAP:
+            raise ValueError(f"Invalid LMUL value: {value}")
+        return VALUE_MAP[value]
+
+    @staticmethod
+    def divide(lmul_type: 'LMULType', divisor: int) -> 'LMULType':
+        """Divide an LMUL type by a power-of-two divisor."""
+        return LMULType.from_value(LMULType.to_value(lmul_type) / divisor)
+
+    @staticmethod
+    def multiply(lmul_type: 'LMULType', factor: int) -> 'LMULType':
+        """Multiply an LMUL type by a power-of-two factor."""
+        return LMULType.from_value(LMULType.to_value(lmul_type) * factor)
 
 class OperationType(Enum):
     ROR = auto()
@@ -95,6 +148,32 @@ class OperationType(Enum):
     GE = auto()
     BREV8 = auto()
     REV8 = auto()
+    WMACC = auto()
+    WMACCU = auto()
+    WMACCSU = auto()
+    WMACCUS = auto()
+    DOT4A = auto()
+    DOT4AU = auto()
+    DOT4ASU = auto()
+    DOT4AUS = auto()
+    WMUL = auto()
+    WMULU = auto()
+    WMULSU = auto()
+    WADD = auto()
+    WADDU = auto()
+    MV = auto()
+
+    # misc
+    REINTERPRET = auto()
+    CREATE = auto()
+    GET = auto()
+
+    MIN = auto()
+    MAX = auto()
+    MINU = auto()
+    MAXU = auto()
+
+    VSETVLMAX = auto()
 
     INPUT = auto()
     IMMEDIATE = auto()
@@ -133,6 +212,50 @@ class OperationType(Enum):
             return "brev8"
         elif op_type == OperationType.REV8:
             return "rev8"
+        elif op_type == OperationType.WMACC:
+            return "wmacc"
+        elif op_type == OperationType.WMACCU:
+            return "wmaccu"
+        elif op_type == OperationType.WMACCSU:
+            return "wmaccsu"
+        elif op_type == OperationType.WMACCUS:
+            return "wmaccus"
+        elif op_type == OperationType.DOT4A:
+            return "dot4a"
+        elif op_type == OperationType.DOT4AU:
+            return "dot4au"
+        elif op_type == OperationType.DOT4ASU:
+            return "dot4asu"
+        elif op_type == OperationType.DOT4AUS:
+            return "dot4aus"
+        elif op_type == OperationType.WMUL:
+            return "wmul"
+        elif op_type == OperationType.WMULU:
+            return "wmulu"
+        elif op_type == OperationType.WMULSU:
+            return "wmulsu"
+        elif op_type == OperationType.WADD:
+            return "wadd"
+        elif op_type == OperationType.WADDU:
+            return "waddu"
+        elif op_type == OperationType.MV:
+            return "mv"
+        elif op_type == OperationType.REINTERPRET:
+            return "reinterpret"
+        elif op_type == OperationType.CREATE:
+            return "create"
+        elif op_type == OperationType.GET:
+            return "get"
+        elif op_type == OperationType.MIN:
+            return "min"
+        elif op_type == OperationType.MAX:
+            return "max"
+        elif op_type == OperationType.MINU:
+            return "minu"
+        elif op_type == OperationType.MAXU:
+            return "maxu"
+        elif op_type == OperationType.VSETVLMAX:
+            return "vsetvlmax"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -152,6 +275,7 @@ class NodeFormatType(Enum):
     IMMEDIATE = auto()
     VECTOR_LENGTH = auto()
     MASK = auto()
+    PLACEHOLDER = auto()
 
 class NodeType(Enum):
     INPUT = auto()
@@ -164,6 +288,9 @@ class NodeFormatDescriptor:
         self.node_format_type = node_format_type
         self.elt_type = elt_type
         self.lmul_type = lmul_type
+
+    def __str__(self):
+        return f"{self.node_format_type.name}_{self.elt_type.name}_{LMULType.to_string(self.lmul_type)}"
 
 
 class Immediate(Node):
@@ -184,11 +311,17 @@ class TailPolicy(Enum):
     UNDISTURBED = auto()
     UNDEFINED = auto()
 
+    def to_string(self):
+        return self.name.lower()
+
 class MaskPolicy(Enum):
     AGNOSTIC = auto()
     UNDISTURBED = auto()
+    UNMASKED = auto()
     UNDEFINED = auto()
-    
+
+    def to_string(self):
+        return self.name.lower()
     
 
 class Operation(Node):
@@ -254,8 +387,10 @@ def int_type_to_vector_type(int_type: EltType, lmul_type: LMULType) -> str:
         return f"vint32{LMULType.to_string(lmul_type)}_t"
     elif int_type == EltType.U64:
         return f"vuint64{LMULType.to_string(lmul_type)}_t"
+    elif int_type == EltType.S64:
+        return f"vint64{LMULType.to_string(lmul_type)}_t"
     else:
-        raise ValueError("Invalid integer type")
+        raise ValueError(f"Invalid integer type: {int_type}")
 
 def vector_type_to_mask_type(node_format: NodeFormatDescriptor) -> str:
     elt_size = element_size(node_format.elt_type)
@@ -295,13 +430,30 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     intrinsic_type_tag = generate_intrinsic_type_tag(prototype.node_format)
     # building operand type descriptor (vv, vx, vi)
     operand_type_descriptor = ""
-    for arg in prototype.args:
+    for (index, arg) in enumerate(prototype.args):
+        if len(prototype.args) > 3 and index == 0:
+            # for 3-operand instructions (e.g. vfmadd or vwmacc), the first operand is never
+            # described in the name suffix
+            # Note: 3-operand instructions have actually 4 operands when vl is taken into account
+            continue
         if arg.node_format.node_format_type == NodeFormatType.VECTOR:
-            operand_type_descriptor += "v"
+            # w for wide, v for vector
+            # w is not used for some single operand operations (e.g. reinterpret)
+            if len(prototype.args) > 1 and element_size(arg.node_format.elt_type) > element_size(prototype.node_format.elt_type):
+                operand_type_descriptor += "w"
+            else: # element_size(args.node_format.elt_type) == element_size(prototype.node_format.elt_type):
+                operand_type_descriptor += "v"
+                
         elif arg.node_format.node_format_type == NodeFormatType.SCALAR:
             operand_type_descriptor += "x"
         elif arg.node_format.node_format_type == NodeFormatType.IMMEDIATE:
             operand_type_descriptor += "i"
+    # Some intrinsics (e.g. reinterpret, create, get) require the source type
+    # to be displayed in the name suffix, and use 'v' as operand descriptor
+    if prototype.op_desc.op_type in [OperationType.REINTERPRET, OperationType.CREATE, OperationType.GET]:
+        source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
+        intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
+        operand_type_descriptor = "v"
     suffix = ""
     # in rvv-intrinsics-doc, tail policy always come before mask policy
     # TODO: handle tail and mask AGNOSTIC policies
@@ -312,6 +464,9 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     elif prototype.mask_policy == MaskPolicy.UNDISTURBED:
         suffix += "mu"
     suffix = f"_{suffix}" if suffix != "" else ""
+    # vmv uses special naming: __riscv_vmv_v_x_<type> (v_ prefix for destination)
+    if prototype.op_desc.op_type == OperationType.MV:
+        operand_type_descriptor = f"v_{operand_type_descriptor}"
     intrinsic_name = f"__riscv_v{OperationType.to_string(prototype.op_desc.op_type)}_{operand_type_descriptor}_{intrinsic_type_tag}{suffix}"
     return intrinsic_name
 
@@ -321,11 +476,11 @@ def generate_intrinsic_prototype(prototype: Operation) -> str:
     # generate prototype
     dst_type = generate_node_format_type_string(prototype.node_format)
     src_types = [generate_node_format_type_string(arg.node_format) for arg in prototype.args]
-    if prototype.tail_policy == TailPolicy.UNDISTURBED or prototype.mask_policy == MaskPolicy.UNDISTURBED:
+    if (prototype.tail_policy == TailPolicy.UNDISTURBED or prototype.mask_policy == MaskPolicy.UNDISTURBED) and prototype.dst not in prototype.args:
         assert prototype.dst is not None
         src_types = [generate_node_format_type_string(prototype.dst.node_format)] + src_types
     # in rvv-intrinsics-doc, vm come before tail (arguments order)
-    if prototype.mask_policy != MaskPolicy.UNDEFINED:
+    if prototype.mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED):
         src_types = [generate_node_format_type_string(prototype.vm.node_format)] + src_types
     prototype = f"{dst_type} {intrinsic_name}({', '.join(src_types)})"
     return f"{prototype};"
@@ -356,11 +511,14 @@ def generate_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -
         elif op.node_format.node_format_type == NodeFormatType.VECTOR or any(arg.node_format.node_format_type == NodeFormatType.VECTOR for arg in op.args):
             # generate intrinsic call
             intrinsic_arg_list = [generate_operation(code, arg, memoization_map) for arg in op.args]
-            if op.tail_policy == TailPolicy.UNDISTURBED or op.mask_policy == MaskPolicy.UNDISTURBED:
-                assert op.dst is not None
-                intrinsic_arg_list.insert(0, generate_operation(code, op.dst, memoization_map))
-            if op.vm is not None:
-                intrinsic_arg_list.insert(0, generate_operation(code, op.vm, memoization_map))
+            # CREATE and GET are pure register manipulation — no vl/tail/mask
+            if op.op_desc.op_type not in (OperationType.CREATE, OperationType.GET):
+                if (op.tail_policy == TailPolicy.UNDISTURBED or op.mask_policy == MaskPolicy.UNDISTURBED):
+                    assert op.dst is not None
+                    intrinsic_arg_list.insert(0, generate_operation(code, op.dst, memoization_map))
+                if op.mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED):
+                    assert op.vm is not None
+                    intrinsic_arg_list.insert(0, generate_operation(code, op.vm, memoization_map))
             
             call_op = f"{generate_intrinsic_name(op)}({', '.join(intrinsic_arg_list)})"
             # generate temp variable
@@ -373,6 +531,14 @@ def generate_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -
             return generate_scalar_operation(code, op, memoization_map)
 
 def generate_scalar_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -> str:
+    # some operations use argument as placeholder to carry metadata
+    # Those arguments should not be evaluated
+    if op.op_desc.op_type == OperationType.VSETVLMAX:
+        vsetvlmax_fmt = op.args[0].node_format
+        lmul = LMULType.to_value(vsetvlmax_fmt.lmul_type)
+        elt_size = element_size(vsetvlmax_fmt.elt_type)
+        return f"__riscv_vsetvlmax_e{elt_size}m{lmul}()"
+
     arg_list = [generate_operation(code, arg, memoization_map) for arg in op.args]
     if op.op_desc.op_type == OperationType.ADD:
         expression = f"{arg_list[0]} + {arg_list[1]}"
@@ -416,6 +582,22 @@ def generate_scalar_operation(code: CodeObject, op: Node, memoization_map: dict[
         expression = f"{arg_list[0]} > {arg_list[1]}"
     elif op.op_desc.op_type == OperationType.GE:
         expression = f"{arg_list[0]} >= {arg_list[1]}"
+    elif op.op_desc.op_type == OperationType.MIN:
+        lhs = arg_list[0]
+        rhs = arg_list[1]
+        expression = f"{lhs} < {rhs} ? {lhs} : {rhs}"
+    elif op.op_desc.op_type == OperationType.MAX:
+        lhs = arg_list[0]
+        rhs = arg_list[1]
+        expression = f"{lhs} > {rhs} ? {lhs} : {rhs}"
+    elif op.op_desc.op_type == OperationType.MINU:
+        lhs = arg_list[0]
+        rhs = arg_list[1]
+        expression = f"{lhs} < {rhs} ? {lhs} : {rhs}"
+    elif op.op_desc.op_type == OperationType.MAXU:
+        lhs = arg_list[0]
+        rhs = arg_list[1]
+        expression = f"{lhs} > {rhs} ? {lhs} : {rhs}"
     else:
         raise ValueError(f"Invalid operation type: {op.op_desc.op_type}")
     
@@ -438,11 +620,13 @@ def generate_intrinsic_from_operation(prototype: Operation, emulation: Operation
             return f"op{src.index}"
     src_list = [f"{src_type} {get_src_name(src)}" for src, src_type in zip(prototype.args, src_types)]
     memoisation_map = {src: get_src_name(src) for src in prototype.args}
-    if prototype.tail_policy == TailPolicy.UNDISTURBED or prototype.mask_policy == MaskPolicy.UNDISTURBED:
+    # if any tail/mask policy is set to undisturbed and the destination is not already an argument
+    # (e.g. destructive MAC operations) then it needs to be added before all arguments
+    if (prototype.tail_policy == TailPolicy.UNDISTURBED or prototype.mask_policy == MaskPolicy.UNDISTURBED) and not prototype.dst in prototype.args:
         assert prototype.dst is not None
         src_list.insert(0, f"{dst_type} {get_src_name(prototype.dst)}")
         memoisation_map[prototype.dst] = get_src_name(prototype.dst)
-    if prototype.vm is not None:
+    if prototype.mask_policy not in [MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED]:
         src_list.insert(0, f"{generate_node_format_type_string(prototype.vm.node_format)} {get_src_name(prototype.vm)}")
         memoisation_map[prototype.vm] = get_src_name(prototype.vm)
     attributes_str = " ".join(attributes)
@@ -451,3 +635,19 @@ def generate_intrinsic_from_operation(prototype: Operation, emulation: Operation
     result = generate_operation(code, emulation, memoisation_map)
     footer = f"  return {result};\n}}"
     return header + code.code + footer
+
+def expand_reinterpret_cast(source: Operation, cast_to_type: NodeFormatDescriptor) -> Operation:
+    if source.node_format == cast_to_type or source.node_format.node_format_type != NodeFormatType.VECTOR:
+        return source
+
+    # Reinterpret cast does not support change of both signedness and element width at once
+    # so we need to split them into two operations
+    if EltType.is_signed(source.node_format.elt_type) != EltType.is_signed(cast_to_type.elt_type):
+        inversed_sign_format = NodeFormatDescriptor(source.node_format.node_format_type, EltType.inverse_sign(source.node_format.elt_type), source.node_format.lmul_type)
+        source = Operation(inversed_sign_format, OperationDesciptor(OperationType.REINTERPRET), source)
+
+    assert EltType.is_signed(source.node_format.elt_type) == EltType.is_signed(cast_to_type.elt_type)
+    if element_size(source.node_format.elt_type) != element_size(cast_to_type.elt_type):
+        source = Operation(cast_to_type, OperationDesciptor(OperationType.REINTERPRET), source)
+
+    return source

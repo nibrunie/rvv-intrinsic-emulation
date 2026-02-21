@@ -166,8 +166,17 @@ def rev8(op0: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: Ta
     return op0
 
 
-def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions: bool):
-    """Generate all Zvkb rotate instruction emulations."""
+def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions: bool,
+                             lmul_filter: list = None, elt_filter: list = None,
+                             tail_policy_filter: list = None, mask_policy_filter: list = None):
+    """Generate all Zvkb rotate instruction emulations.
+
+    Args:
+        lmul_filter: if set, only generate for these LMULType values
+        elt_filter: if set, only generate for these EltType values
+        tail_policy_filter: if set, only generate for these TailPolicy values
+        mask_policy_filter: if set, only generate for these MaskPolicy values
+    """
     output = []
     
     vl_type = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
@@ -177,10 +186,20 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
     output.append("#include <riscv_vector.h>\n")
     output.append("#include <stddef.h>\n")
 
-    for elt_type in [EltType.U8]:#, EltType.U16, EltType.U32, EltType.U64]:
+    all_elt_types = [EltType.U8, EltType.U16, EltType.U32, EltType.U64]
+    all_lmuls = [LMULType.M1, LMULType.M2, LMULType.M4, LMULType.M8]
+    all_tail_policies = [TailPolicy.UNDISTURBED, TailPolicy.AGNOSTIC]
+    all_mask_policies = [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC]
+
+    elt_types = [e for e in all_elt_types if elt_filter is None or e in elt_filter]
+    lmuls = [l for l in all_lmuls if lmul_filter is None or l in lmul_filter]
+    tail_policies = [t for t in all_tail_policies if tail_policy_filter is None or t in tail_policy_filter]
+    mask_policies = [m for m in all_mask_policies if mask_policy_filter is None or m in mask_policy_filter]
+
+    for elt_type in elt_types:
         uint_t = NodeFormatDescriptor(NodeFormatType.SCALAR, elt_type, lmul_type=None)
         rhs_vx = Input(uint_t, 1)
-        for lmul in [LMULType.M1]:#, LMULType.M2, LMULType.M4, LMULType.M8]:
+        for lmul in lmuls:
             vuintm_t = NodeFormatDescriptor(NodeFormatType.VECTOR, elt_type, lmul)
             vbooln_t = NodeFormatDescriptor(NodeFormatType.MASK, elt_type, lmul)
             
@@ -189,8 +208,8 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
             vm = Input(vbooln_t, -2, name="vm")
             vd = Input(vuintm_t, -1, name="vd")
 
-            for tail_policy in [TailPolicy.UNDISTURBED, TailPolicy.AGNOSTIC]:
-                for mask_policy in [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC]:
+            for tail_policy in tail_policies:
+                for mask_policy in mask_policies:
                     dst = vd if tail_policy == TailPolicy.UNDISTURBED or mask_policy == MaskPolicy.UNDISTURBED else None
                     mask = vm if mask_policy != MaskPolicy.UNDEFINED else None
 
