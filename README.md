@@ -110,7 +110,7 @@ rie-zvdot4a8i > zvdot4a8i_emu.h
 ```python
 from rie_generator import (
     EltType, LMULType, OperationType,
-    Operation, OperationDesciptor, Input,
+    Operation, OperationDescriptor, Input,
     NodeFormatDescriptor, NodeFormatType,
     generate_intrinsic_from_operation,
 )

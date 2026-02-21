@@ -259,7 +259,7 @@ class OperationType(Enum):
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
-class OperationDesciptor:
+class OperationDescriptor:
     def __init__(self, op_type):
         self.op_type = op_type
 
@@ -325,7 +325,7 @@ class MaskPolicy(Enum):
     
 
 class Operation(Node):
-    def __init__(self, node_format: NodeFormatDescriptor, op_desc: OperationDesciptor, *args, vm: Input=None, dst: Input=None, tail_policy: TailPolicy=TailPolicy.UNDEFINED, mask_policy: MaskPolicy=MaskPolicy.UNDEFINED):
+    def __init__(self, node_format: NodeFormatDescriptor, op_desc: OperationDescriptor, *args, vm: Input=None, dst: Input=None, tail_policy: TailPolicy=TailPolicy.UNDEFINED, mask_policy: MaskPolicy=MaskPolicy.UNDEFINED):
         self.node_format = node_format
         self.op_desc = op_desc
         self.args = args
@@ -644,10 +644,10 @@ def expand_reinterpret_cast(source: Operation, cast_to_type: NodeFormatDescripto
     # so we need to split them into two operations
     if EltType.is_signed(source.node_format.elt_type) != EltType.is_signed(cast_to_type.elt_type):
         inversed_sign_format = NodeFormatDescriptor(source.node_format.node_format_type, EltType.inverse_sign(source.node_format.elt_type), source.node_format.lmul_type)
-        source = Operation(inversed_sign_format, OperationDesciptor(OperationType.REINTERPRET), source)
+        source = Operation(inversed_sign_format, OperationDescriptor(OperationType.REINTERPRET), source)
 
     assert EltType.is_signed(source.node_format.elt_type) == EltType.is_signed(cast_to_type.elt_type)
     if element_size(source.node_format.elt_type) != element_size(cast_to_type.elt_type):
-        source = Operation(cast_to_type, OperationDesciptor(OperationType.REINTERPRET), source)
+        source = Operation(cast_to_type, OperationDescriptor(OperationType.REINTERPRET), source)
 
     return source
