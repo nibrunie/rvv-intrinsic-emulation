@@ -173,6 +173,8 @@ class OperationType(Enum):
     MINU = auto()
     MAXU = auto()
 
+    VSETVLMAX = auto()
+
     INPUT = auto()
     IMMEDIATE = auto()
 
@@ -527,6 +529,14 @@ def generate_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -
             return generate_scalar_operation(code, op, memoization_map)
 
 def generate_scalar_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -> str:
+    # some operations use argument as placeholder to carry metadata
+    # Those arguments should not be evaluated
+    if op.op_desc.op_type == OperationType.VSETVLMAX:
+        vsetvlmax_fmt = op.args[0].node_format
+        lmul = LMULType.to_value(vsetvlmax_fmt.lmul_type)
+        elt_size = element_size(vsetvlmax_fmt.elt_type)
+        return f"__riscv_vsetvlmax_e{elt_size}m{lmul}()"
+
     arg_list = [generate_operation(code, arg, memoization_map) for arg in op.args]
     if op.op_desc.op_type == OperationType.ADD:
         expression = f"{arg_list[0]} + {arg_list[1]}"
