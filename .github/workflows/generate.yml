@@ -1,0 +1,25 @@
+name: Generate All Extensions
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  generate:
+    name: Generate emulation headers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Run generation smoke tests
+        run: bash scripts/ci_generate_all.sh
