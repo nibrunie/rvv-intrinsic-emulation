@@ -275,6 +275,7 @@ class NodeFormatType(Enum):
     IMMEDIATE = auto()
     VECTOR_LENGTH = auto()
     MASK = auto()
+    PLACEHOLDER = auto()
 
 class NodeType(Enum):
     INPUT = auto()
@@ -516,6 +517,7 @@ def generate_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -
                     assert op.dst is not None
                     intrinsic_arg_list.insert(0, generate_operation(code, op.dst, memoization_map))
                 if op.mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED):
+                    assert op.vm is not None
                     intrinsic_arg_list.insert(0, generate_operation(code, op.vm, memoization_map))
             
             call_op = f"{generate_intrinsic_name(op)}({', '.join(intrinsic_arg_list)})"

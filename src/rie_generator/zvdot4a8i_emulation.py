@@ -92,21 +92,28 @@ def dot4_pipeline(
             vs1_lo = vs1
             vs1_hi = vs1
 
+        m4_result_fmt = NodeFormatDescriptor(NodeFormatType.PLACEHOLDER, vd.node_format.elt_type, half_lmul)
+        placeholder = Immediate(m4_result_fmt, None)
+        vlmax_m4 = Operation(vl_fmt, OperationDesciptor(OperationType.VSETVLMAX), placeholder)
+
         # vl_half = vl / 2
-        vl_half = Operation(vl_fmt, OperationDesciptor(OperationType.DIV),
-                            vl, Immediate(vl_fmt, 2))
+        vl_lo = Operation(vl_fmt, OperationDesciptor(OperationType.MIN),
+                          vl, vlmax_m4)
+        vl_hi = Operation(vl_fmt, OperationDesciptor(OperationType.SUB),
+                            vl, vl_lo)
+        
+        # FIXME: implement mask support (through either mask splitting or masked merged with LMUL=8)
 
         # Process each M4 half independently
-        result_lo = dot4_pipeline(vs2_lo, vs1_lo, vd_lo, vl_half,
+        result_lo = dot4_pipeline(vs2_lo, vs1_lo, vd_lo, vl_lo,
                                   wmul_op, wadd_op, half_lmul,
-                                  tail_policy, mask_policy, vm=None)
-        result_hi = dot4_pipeline(vs2_hi, vs1_hi, vd_hi, vl_half,
+                                  tail_policy, MaskPolicy.UNMASKED, vm=None)
+        result_hi = dot4_pipeline(vs2_hi, vs1_hi, vd_hi, vl_hi,
                                   wmul_op, wadd_op, half_lmul,
-                                  tail_policy, mask_policy, vm=None)
+                                  tail_policy, MaskPolicy.UNMASKED, vm=None)
 
         # CREATE: reassemble two M4 results into M8 (result type matches vd)
         result_elt = vd.node_format.elt_type
-        m4_result_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, result_elt, half_lmul)
         m8_result_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, result_elt, LMULType.M8)
         result = Operation(m8_result_fmt, OperationDesciptor(OperationType.CREATE),
                            result_lo, result_hi)
