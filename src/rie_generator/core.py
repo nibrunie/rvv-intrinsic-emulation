@@ -165,6 +165,8 @@ class OperationType(Enum):
 
     # misc
     REINTERPRET = auto()
+    CREATE = auto()
+    GET = auto()
 
     INPUT = auto()
     IMMEDIATE = auto()
@@ -233,6 +235,10 @@ class OperationType(Enum):
             return "mv"
         elif op_type == OperationType.REINTERPRET:
             return "reinterpret"
+        elif op_type == OperationType.CREATE:
+            return "create"
+        elif op_type == OperationType.GET:
+            return "get"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -424,11 +430,12 @@ def generate_intrinsic_name(prototype: Operation) -> str:
             operand_type_descriptor += "x"
         elif arg.node_format.node_format_type == NodeFormatType.IMMEDIATE:
             operand_type_descriptor += "i"
-    # Some intrinsics (e.g. reinterpret) require the source type to be displayed
-    # in the name suffix
-    if prototype.op_desc.op_type in  [OperationType.REINTERPRET]:
+    # Some intrinsics (e.g. reinterpret, create, get) require the source type
+    # to be displayed in the name suffix, and use 'v' as operand descriptor
+    if prototype.op_desc.op_type in [OperationType.REINTERPRET, OperationType.CREATE, OperationType.GET]:
         source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
         intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
+        operand_type_descriptor = "v"
     suffix = ""
     # in rvv-intrinsics-doc, tail policy always come before mask policy
     # TODO: handle tail and mask AGNOSTIC policies
@@ -486,11 +493,13 @@ def generate_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -
         elif op.node_format.node_format_type == NodeFormatType.VECTOR or any(arg.node_format.node_format_type == NodeFormatType.VECTOR for arg in op.args):
             # generate intrinsic call
             intrinsic_arg_list = [generate_operation(code, arg, memoization_map) for arg in op.args]
-            if (op.tail_policy == TailPolicy.UNDISTURBED or op.mask_policy == MaskPolicy.UNDISTURBED):
-                assert op.dst is not None
-                intrinsic_arg_list.insert(0, generate_operation(code, op.dst, memoization_map))
-            if op.mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED):
-                intrinsic_arg_list.insert(0, generate_operation(code, op.vm, memoization_map))
+            # CREATE and GET are pure register manipulation — no vl/tail/mask
+            if op.op_desc.op_type not in (OperationType.CREATE, OperationType.GET):
+                if (op.tail_policy == TailPolicy.UNDISTURBED or op.mask_policy == MaskPolicy.UNDISTURBED):
+                    assert op.dst is not None
+                    intrinsic_arg_list.insert(0, generate_operation(code, op.dst, memoization_map))
+                if op.mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED):
+                    intrinsic_arg_list.insert(0, generate_operation(code, op.vm, memoization_map))
             
             call_op = f"{generate_intrinsic_name(op)}({', '.join(intrinsic_arg_list)})"
             # generate temp variable
