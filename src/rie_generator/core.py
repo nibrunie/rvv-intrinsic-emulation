@@ -168,6 +168,11 @@ class OperationType(Enum):
     CREATE = auto()
     GET = auto()
 
+    MIN = auto()
+    MAX = auto()
+    MINU = auto()
+    MAXU = auto()
+
     INPUT = auto()
     IMMEDIATE = auto()
 
@@ -239,6 +244,16 @@ class OperationType(Enum):
             return "create"
         elif op_type == OperationType.GET:
             return "get"
+        elif op_type == OperationType.MIN:
+            return "min"
+        elif op_type == OperationType.MAX:
+            return "max"
+        elif op_type == OperationType.MINU:
+            return "minu"
+        elif op_type == OperationType.MAXU:
+            return "maxu"
+        elif op_type == OperationType.VSETVLMAX:
+            return "vsetvlmax"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -555,6 +570,22 @@ def generate_scalar_operation(code: CodeObject, op: Node, memoization_map: dict[
         expression = f"{arg_list[0]} > {arg_list[1]}"
     elif op.op_desc.op_type == OperationType.GE:
         expression = f"{arg_list[0]} >= {arg_list[1]}"
+    elif op.op_desc.op_type == OperationType.MIN:
+        lhs = arg_list[0]
+        rhs = arg_list[1]
+        expression = f"{lhs} < {rhs} ? {lhs} : {rhs}"
+    elif op.op_desc.op_type == OperationType.MAX:
+        lhs = arg_list[0]
+        rhs = arg_list[1]
+        expression = f"{lhs} > {rhs} ? {lhs} : {rhs}"
+    elif op.op_desc.op_type == OperationType.MINU:
+        lhs = arg_list[0]
+        rhs = arg_list[1]
+        expression = f"{lhs} < {rhs} ? {lhs} : {rhs}"
+    elif op.op_desc.op_type == OperationType.MAXU:
+        lhs = arg_list[0]
+        rhs = arg_list[1]
+        expression = f"{lhs} > {rhs} ? {lhs} : {rhs}"
     else:
         raise ValueError(f"Invalid operation type: {op.op_desc.op_type}")
     
