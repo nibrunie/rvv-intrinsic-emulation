@@ -60,6 +60,59 @@ def dot4_pipeline(
         mask_policy: mask policy
         vm: mask
     """
+    # M8 splitting: split into two M4 halves, process independently, reassemble
+    if lmul == LMULType.M8:
+        half_lmul = LMULType.M4
+        vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
+        idx_fmt = NodeFormatDescriptor(NodeFormatType.IMMEDIATE, EltType.SIZE_T)
+
+        # Derive M4/M8 formats from each input's own element type
+        def make_m4(node):
+            return NodeFormatDescriptor(NodeFormatType.VECTOR, node.node_format.elt_type, half_lmul)
+
+        def get_halves(node):
+            m4 = make_m4(node)
+            lo = Operation(m4, OperationDesciptor(OperationType.GET), node, Immediate(idx_fmt, 0))
+            hi = Operation(m4, OperationDesciptor(OperationType.GET), node, Immediate(idx_fmt, 1))
+            return lo, hi
+
+        # GET: extract low (index 0) and high (index 1) M4 chunks
+        # For scalar operands, pass through directly (e.g. vdota4us swaps rs1 into vs2)
+        if vs2.node_format.node_format_type == NodeFormatType.VECTOR:
+            vs2_lo, vs2_hi = get_halves(vs2)
+        else:
+            vs2_lo = vs2
+            vs2_hi = vs2
+        vd_lo, vd_hi = get_halves(vd)
+
+        # For vector vs1, split; for scalar vs1, pass through directly
+        if vs1.node_format.node_format_type == NodeFormatType.VECTOR:
+            vs1_lo, vs1_hi = get_halves(vs1)
+        else:
+            vs1_lo = vs1
+            vs1_hi = vs1
+
+        # vl_half = vl / 2
+        vl_half = Operation(vl_fmt, OperationDesciptor(OperationType.DIV),
+                            vl, Immediate(vl_fmt, 2))
+
+        # Process each M4 half independently
+        result_lo = dot4_pipeline(vs2_lo, vs1_lo, vd_lo, vl_half,
+                                  wmul_op, wadd_op, half_lmul,
+                                  tail_policy, mask_policy, vm=None)
+        result_hi = dot4_pipeline(vs2_hi, vs1_hi, vd_hi, vl_half,
+                                  wmul_op, wadd_op, half_lmul,
+                                  tail_policy, mask_policy, vm=None)
+
+        # CREATE: reassemble two M4 results into M8 (result type matches vd)
+        result_elt = vd.node_format.elt_type
+        m4_result_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, result_elt, half_lmul)
+        m8_result_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, result_elt, LMULType.M8)
+        result = Operation(m8_result_fmt, OperationDesciptor(OperationType.CREATE),
+                           result_lo, result_hi)
+        return result
+
+    # --- Standard path (M1, M2, M4): requires 2*LMUL ≤ M8 ---
     # Derived formats
     lmul_x2 = LMULType.multiply(lmul, 2)
     # SEW=8 at original LMUL (same register group as 32-bit, 4x more elements)
@@ -188,8 +241,8 @@ def dot4_pipeline(
 
 
 # LMUL values valid for 32-bit elements (SEW=32)
-# Need room for 2*LMUL widening, so max is M4 (2*M4 = M8)
-VALID_32BIT_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4]
+# M1-M4 use the standard widening pipeline; M8 uses the CREATE/GET split path
+VALID_32BIT_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4, LMULType.M8]
 
 
 def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = False, definitions: bool = True,
