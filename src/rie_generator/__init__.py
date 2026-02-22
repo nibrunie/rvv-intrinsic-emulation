@@ -13,7 +13,7 @@ from .core import (
     NodeFormatType,
     NodeType,
     # Classes
-    OperationDesciptor,
+    OperationDescriptor,
     Node,
     Immediate,
     Input,
@@ -42,7 +42,7 @@ __all__ = [
     "NodeFormatType",
     "NodeType",
     # Classes
-    "OperationDesciptor",
+    "OperationDescriptor",
     "Node",
     "Immediate",
     "Input",

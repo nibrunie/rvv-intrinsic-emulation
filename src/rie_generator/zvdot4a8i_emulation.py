@@ -17,7 +17,7 @@ Emulation strategy (widening multiply + pairwise reduction):
 
 from .core import (
     Operation,
-    OperationDesciptor,
+    OperationDescriptor,
     NodeFormatDescriptor,
     NodeFormatType,
     Immediate,
@@ -72,8 +72,8 @@ def dot4_pipeline(
 
         def get_halves(node):
             m4 = make_m4(node)
-            lo = Operation(m4, OperationDesciptor(OperationType.GET), node, Immediate(idx_fmt, 0))
-            hi = Operation(m4, OperationDesciptor(OperationType.GET), node, Immediate(idx_fmt, 1))
+            lo = Operation(m4, OperationDescriptor(OperationType.GET), node, Immediate(idx_fmt, 0))
+            hi = Operation(m4, OperationDescriptor(OperationType.GET), node, Immediate(idx_fmt, 1))
             return lo, hi
 
         # GET: extract low (index 0) and high (index 1) M4 chunks
@@ -94,12 +94,12 @@ def dot4_pipeline(
 
         m4_result_fmt = NodeFormatDescriptor(NodeFormatType.PLACEHOLDER, vd.node_format.elt_type, half_lmul)
         placeholder = Immediate(m4_result_fmt, None)
-        vlmax_m4 = Operation(vl_fmt, OperationDesciptor(OperationType.VSETVLMAX), placeholder)
+        vlmax_m4 = Operation(vl_fmt, OperationDescriptor(OperationType.VSETVLMAX), placeholder)
 
         # vl_half = vl / 2
-        vl_lo = Operation(vl_fmt, OperationDesciptor(OperationType.MIN),
+        vl_lo = Operation(vl_fmt, OperationDescriptor(OperationType.MIN),
                           vl, vlmax_m4)
-        vl_hi = Operation(vl_fmt, OperationDesciptor(OperationType.SUB),
+        vl_hi = Operation(vl_fmt, OperationDescriptor(OperationType.SUB),
                             vl, vl_lo)
         
         # FIXME: implement mask support (through either mask splitting or masked merged with LMUL=8)
@@ -115,7 +115,7 @@ def dot4_pipeline(
         # CREATE: reassemble two M4 results into M8 (result type matches vd)
         result_elt = vd.node_format.elt_type
         m8_result_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, result_elt, LMULType.M8)
-        result = Operation(m8_result_fmt, OperationDesciptor(OperationType.CREATE),
+        result = Operation(m8_result_fmt, OperationDescriptor(OperationType.CREATE),
                            result_lo, result_hi)
         return result
 
@@ -161,36 +161,36 @@ def dot4_pipeline(
     vs2_fmt = s8_fmt if vs2_is_signed else u8_fmt
 
     if vs1.node_format.node_format_type is NodeFormatType.SCALAR:
-        vs1 = Operation(u32_fmt, OperationDesciptor(OperationType.MV), vs1, vl)
+        vs1 = Operation(u32_fmt, OperationDescriptor(OperationType.MV), vs1, vl)
     if vs2.node_format.node_format_type is NodeFormatType.SCALAR:
-        vs2 = Operation(u32_fmt, OperationDesciptor(OperationType.MV), vs2, vl)
+        vs2 = Operation(u32_fmt, OperationDescriptor(OperationType.MV), vs2, vl)
 
 
     assert vs2.node_format.node_format_type is NodeFormatType.VECTOR
     assert vs1.node_format.node_format_type is NodeFormatType.VECTOR
 
     # Step 0: Reinterpret vs1 as u8
-    #vs1_u8 = Operation(u8_fmt, OperationDesciptor(OperationType.REINTERPRET), vs1)
+    #vs1_u8 = Operation(u8_fmt, OperationDescriptor(OperationType.REINTERPRET), vs1)
     vs1_e8 = expand_reinterpret_cast(vs1, vs1_fmt)
     # Since vs2/vs1 might be swapped, we also need to check whether vs2/rs2 needs to
     # be reinterpreted
-    #vs2_u8 = Operation(u8_fmt, OperationDesciptor(OperationType.REINTERPRET), vs2)
+    #vs2_u8 = Operation(u8_fmt, OperationDescriptor(OperationType.REINTERPRET), vs2)
     vs2_e8 = expand_reinterpret_cast(vs2, vs2_fmt)
 
     # Step 1: vl_x4 = 4 * vl (for SEW=8 operations)
-    vl_x4 = Operation(vl_fmt, OperationDesciptor(OperationType.MUL),
+    vl_x4 = Operation(vl_fmt, OperationDescriptor(OperationType.MUL),
                        vl, Immediate(vl_fmt, 4))
     # Step 1 (cont.): vl_x2 = 2 * vl (for SEW=16 operations)
-    vl_x2 = Operation(vl_fmt, OperationDesciptor(OperationType.MUL),
+    vl_x2 = Operation(vl_fmt, OperationDescriptor(OperationType.MUL),
                        vl, Immediate(vl_fmt, 2))
 
     # Step 1: Widening multiply 8-bit to 16-bit
     # SEW=8, LMUL=original, vl=4*original_vl
-    products = Operation(prod_16_x2_fmt, OperationDesciptor(wmul_op),
+    products = Operation(prod_16_x2_fmt, OperationDescriptor(wmul_op),
                          vs2_e8, vs1_e8, vl_x4)
 
     # reinterpret products as SEW=64  with 2x original LMUL (and original vl, since 64 is twice the original 32-bit SEW)
-    products = Operation(result_64_x2_fmt, OperationDesciptor(OperationType.REINTERPRET), products)
+    products = Operation(result_64_x2_fmt, OperationDescriptor(OperationType.REINTERPRET), products)
 
     # narrowing shift only operates on unsigned element, so casting might be required here
     products = expand_reinterpret_cast(products, u64_x2_fmt)
@@ -198,50 +198,50 @@ def dot4_pipeline(
     # Step 2: Extract high products via narrow right shift by 32
     # Source: products viewed as SEW=64 at 2*LMUL, result: SEW=32 at LMUL
     shift_32 = Immediate(scalar_u32_fmt, 32)
-    high_products = Operation(u32_fmt, OperationDesciptor(OperationType.NSRL),
+    high_products = Operation(u32_fmt, OperationDescriptor(OperationType.NSRL),
                               products, shift_32, vl)
 
     # Step 3: Extract low products via narrow right shift by 0
     shift_0 = Immediate(scalar_u32_fmt, 0)
-    low_products = Operation(u32_fmt, OperationDesciptor(OperationType.NSRL),
+    low_products = Operation(u32_fmt, OperationDescriptor(OperationType.NSRL),
                              products, shift_0, vl)
 
     high_products = expand_reinterpret_cast(high_products, prod_32_fmt)
     low_products = expand_reinterpret_cast(low_products, prod_32_fmt)
 
-    high_products = Operation(sum_16_fmt, OperationDesciptor(OperationType.REINTERPRET),
+    high_products = Operation(sum_16_fmt, OperationDescriptor(OperationType.REINTERPRET),
                               high_products)
-    low_products = Operation(sum_16_fmt, OperationDesciptor(OperationType.REINTERPRET),
+    low_products = Operation(sum_16_fmt, OperationDescriptor(OperationType.REINTERPRET),
                               low_products)
 
     # Step 4: Widening addition of high and low products
     # Source: SEW=16 at LMUL, vl=2*original_vl, result: SEW=32 at 2*LMUL
-    sums = Operation(sum_32_x2_fmt, OperationDesciptor(wadd_op),
+    sums = Operation(sum_32_x2_fmt, OperationDescriptor(wadd_op),
                      high_products, low_products, vl_x2)
 
     # Reinterpret sums as SEW=64 at 2*LMUL
-    sums = Operation(result_64_x2_fmt, OperationDesciptor(OperationType.REINTERPRET), sums)
+    sums = Operation(result_64_x2_fmt, OperationDescriptor(OperationType.REINTERPRET), sums)
 
     sums = expand_reinterpret_cast(sums, u64_x2_fmt)
 
     # Step 5: Extract high sums via narrow right shift by 32
     # Source: sums viewed as SEW=64 at 2*LMUL, result: SEW=32 at LMUL
-    high_sums = Operation(u32_fmt, OperationDesciptor(OperationType.NSRL),
+    high_sums = Operation(u32_fmt, OperationDescriptor(OperationType.NSRL),
                           sums, shift_32, vl)
 
     # Step 6: Extract low sums via narrow right shift by 0
-    low_sums = Operation(u32_fmt, OperationDesciptor(OperationType.NSRL),
+    low_sums = Operation(u32_fmt, OperationDescriptor(OperationType.NSRL),
                          sums, shift_0, vl)
 
     high_sums = expand_reinterpret_cast(high_sums, result_32_fmt)
     low_sums = expand_reinterpret_cast(low_sums, result_32_fmt)
 
     # Step 7: Single-width addition of high and low sums (SEW=32)
-    partial_sum = Operation(result_32_fmt, OperationDesciptor(OperationType.ADD),
+    partial_sum = Operation(result_32_fmt, OperationDescriptor(OperationType.ADD),
                             high_sums, low_sums, vl)
 
     # Step 8: Final single-width addition with accumulator (vd)
-    result = Operation(result_32_fmt, OperationDesciptor(OperationType.ADD),
+    result = Operation(result_32_fmt, OperationDescriptor(OperationType.ADD),
                        partial_sum, vd, vl, tail_policy=tail_policy, mask_policy=mask_policy, dst=vd, vm=vm)
 
     return result
@@ -314,7 +314,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 # --- vdota4u: unsigned-unsigned ---
                 # vv
                 proto_dota4u_vv = Operation(
-                    vuint32_t, OperationDesciptor(OperationType.DOT4AU),
+                    vuint32_t, OperationDescriptor(OperationType.DOT4AU),
                     vd_u, vs2_u, vs1_u, vl,
                     dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -323,7 +323,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
 
                 # vx: use vector-scalar widening multiply directly
                 proto_dota4u_vx = Operation(
-                    vuint32_t, OperationDesciptor(OperationType.DOT4AU),
+                    vuint32_t, OperationDescriptor(OperationType.DOT4AU),
                     vd_u, vs2_u, rs1_u, vl,
                     dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -333,7 +333,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 # --- vdota4: signed-signed ---
                 # vv
                 proto_dota4_vv = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOT4A),
+                    vint32_t, OperationDescriptor(OperationType.DOT4A),
                     vd_s, vs2_s, vs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -342,7 +342,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
 
                 # vx
                 proto_dota4_vx = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOT4A),
+                    vint32_t, OperationDescriptor(OperationType.DOT4A),
                     vd_s, vs2_s, rs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -352,7 +352,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 # --- vdota4su: signed(vs2)-unsigned(vs1) ---
                 # vv
                 proto_dota4su_vv = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOT4ASU),
+                    vint32_t, OperationDescriptor(OperationType.DOT4ASU),
                     vd_s, vs2_s, vs1_u, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -361,7 +361,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
 
                 # vx
                 proto_dota4su_vx = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOT4ASU),
+                    vint32_t, OperationDescriptor(OperationType.DOT4ASU),
                     vd_s, vs2_s, rs1_u, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
@@ -372,7 +372,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 # vwmulsu_vx(vs2, rs1) treats vs2 as signed and rs1 as unsigned.
                 # We need unsigned(vs2) * signed(rs1), so we use swapped operand order.
                 proto_dota4us_vx = Operation(
-                    vint32_t, OperationDesciptor(OperationType.DOT4AUS),
+                    vint32_t, OperationDescriptor(OperationType.DOT4AUS),
                     vd_s, vs2_u, rs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )

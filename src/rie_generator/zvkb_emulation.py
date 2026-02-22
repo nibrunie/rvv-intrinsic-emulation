@@ -7,7 +7,7 @@ instructions (vror, vrol) using standard RVV intrinsics.
 
 from .core import (
     Operation,
-    OperationDesciptor,
+    OperationDescriptor,
     NodeFormatDescriptor,
     NodeFormatType,
     Immediate,
@@ -29,33 +29,33 @@ def rotate_left(elts: Node, rot_amount: Node, vl: Node, dst: Node = None, vm: No
     """Generate a rotate left operation using shifts and OR."""
     left_shift = Operation(
         elts.node_format,
-        OperationDesciptor(OperationType.SLL),
+        OperationDescriptor(OperationType.SLL),
         elts, rot_amount, vl
     )
     if rot_amount.node_format.node_format_type == NodeFormatType.SCALAR:
         rsub = Operation(
             rot_amount.node_format,
-            OperationDesciptor(OperationType.RSUB),
+            OperationDescriptor(OperationType.RSUB),
             rot_amount,
             Immediate(get_scalar_format(rot_amount.node_format), element_size(elts.node_format.elt_type))
         )
     else:
         rsub = Operation(
             rot_amount.node_format,
-            OperationDesciptor(OperationType.RSUB),
+            OperationDescriptor(OperationType.RSUB),
             rot_amount,
             Immediate(get_scalar_format(rot_amount.node_format), element_size(elts.node_format.elt_type)),
             vl
         )
     right_shift = Operation(
         elts.node_format,
-        OperationDesciptor(OperationType.SRL),
+        OperationDescriptor(OperationType.SRL),
         elts,
         rsub,
         vl   
     )
      
-    or_desc = OperationDesciptor(OperationType.OR)
+    or_desc = OperationDescriptor(OperationType.OR)
     return Operation(elts.node_format, or_desc, left_shift, right_shift, vl)
 
 
@@ -63,41 +63,41 @@ def rotate_right(elts: Node, rot_amount: Node, vl: Node, vm: Node = None, dst: N
     """Generate a rotate right operation using shifts and OR."""
     right_shift = Operation(
         elts.node_format,
-        OperationDesciptor(OperationType.SRL),
+        OperationDescriptor(OperationType.SRL),
         elts, rot_amount, vl
     )
     if rot_amount.node_format.node_format_type == NodeFormatType.SCALAR:
         rsub = Operation(
             rot_amount.node_format,
-            OperationDesciptor(OperationType.RSUB),
+            OperationDescriptor(OperationType.RSUB),
             rot_amount,
             Immediate(get_scalar_format(rot_amount.node_format), element_size(elts.node_format.elt_type))
         )
     else:
         rsub = Operation(
             rot_amount.node_format,
-            OperationDesciptor(OperationType.RSUB),
+            OperationDescriptor(OperationType.RSUB),
             rot_amount,
             Immediate(get_scalar_format(rot_amount.node_format), element_size(elts.node_format.elt_type)),
             vl
         )
     left_shift = Operation(
         elts.node_format,
-        OperationDesciptor(OperationType.SLL),
+        OperationDescriptor(OperationType.SLL),
         elts,
         rsub,
         vl
     )
      
-    or_desc = OperationDesciptor(OperationType.OR)
+    or_desc = OperationDescriptor(OperationType.OR)
     return Operation(elts.node_format, or_desc, left_shift, right_shift, vl, vm=vm, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
 
 def and_not(op0: Node, op1: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: TailPolicy = TailPolicy.UNDEFINED, mask_policy: MaskPolicy = MaskPolicy.UNDEFINED) -> Node:
     """Generate vector andn (and not) using operation RVV 1.0 operation only."""
-    not_desc = OperationDesciptor(OperationType.NOT)
+    not_desc = OperationDescriptor(OperationType.NOT)
     not_op1 = Operation(op1.node_format, not_desc, op1, vl)
-    and_desc = OperationDesciptor(OperationType.AND)
+    and_desc = OperationDescriptor(OperationType.AND)
     return Operation(op0.node_format, and_desc, op0, not_op1, vl, vm=vm, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
 
 
@@ -107,25 +107,25 @@ def brev8(op0: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: T
     mask_elt_size = (1 << (elt_size)) - 1
     mask_4bits = Immediate(get_scalar_format(op0.node_format), 0x0F0F0F0F0F0F0F0F & mask_elt_size)
     # inversing nimbles in byte
-    op0_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0, mask_4bits, vl)
-    op0_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 4), vl)
-    op0_hi_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 4), vl)
-    op0_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_hi_shift, mask_4bits, vl)
-    op0_inv_nimbles = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
+    op0_lo = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0, mask_4bits, vl)
+    op0_lo_shift = Operation(op0.node_format, OperationDescriptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 4), vl)
+    op0_hi_shift = Operation(op0.node_format, OperationDescriptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 4), vl)
+    op0_hi_masked = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0_hi_shift, mask_4bits, vl)
+    op0_inv_nimbles = Operation(op0.node_format, OperationDescriptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
     # inversing 2-bit in nimbles
     mask_2bits = Immediate(get_scalar_format(op0.node_format), 0x3333333333333333 & mask_elt_size)
-    op0_2bits_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_inv_nimbles, mask_2bits, vl)
-    op0_2bits_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_2bits_lo, Immediate(get_scalar_format(op0.node_format), 2), vl)
-    op0_2bits_hi_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0_inv_nimbles, Immediate(get_scalar_format(op0.node_format), 2), vl)
-    op0_2bits_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_2bits_hi_shift, mask_2bits, vl)
-    op0_inv_2bits = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_2bits_lo_shift, op0_2bits_hi_masked, vl)
+    op0_2bits_lo = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0_inv_nimbles, mask_2bits, vl)
+    op0_2bits_lo_shift = Operation(op0.node_format, OperationDescriptor(OperationType.SLL), op0_2bits_lo, Immediate(get_scalar_format(op0.node_format), 2), vl)
+    op0_2bits_hi_shift = Operation(op0.node_format, OperationDescriptor(OperationType.SRL), op0_inv_nimbles, Immediate(get_scalar_format(op0.node_format), 2), vl)
+    op0_2bits_hi_masked = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0_2bits_hi_shift, mask_2bits, vl)
+    op0_inv_2bits = Operation(op0.node_format, OperationDescriptor(OperationType.OR), op0_2bits_lo_shift, op0_2bits_hi_masked, vl)
     # inversing 1-bit in nimbles
     mask_1bit = Immediate(get_scalar_format(op0.node_format), 0x5555555555555555 & mask_elt_size)
-    op0_1bit_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_inv_2bits, mask_1bit, vl)
-    op0_1bit_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_1bit_lo, Immediate(get_scalar_format(op0.node_format), 1), vl)
-    op0_1bit_hi_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0_inv_2bits, Immediate(get_scalar_format(op0.node_format), 1), vl)
-    op0_1bit_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_1bit_hi_shift, mask_1bit, vl)
-    op0_inv_1bit = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_1bit_lo_shift, op0_1bit_hi_masked, vl, vm=vm, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
+    op0_1bit_lo = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0_inv_2bits, mask_1bit, vl)
+    op0_1bit_lo_shift = Operation(op0.node_format, OperationDescriptor(OperationType.SLL), op0_1bit_lo, Immediate(get_scalar_format(op0.node_format), 1), vl)
+    op0_1bit_hi_shift = Operation(op0.node_format, OperationDescriptor(OperationType.SRL), op0_inv_2bits, Immediate(get_scalar_format(op0.node_format), 1), vl)
+    op0_1bit_hi_masked = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0_1bit_hi_shift, mask_1bit, vl)
+    op0_inv_1bit = Operation(op0.node_format, OperationDescriptor(OperationType.OR), op0_1bit_lo_shift, op0_1bit_hi_masked, vl, vm=vm, dst=dst, tail_policy=tail_policy, mask_policy=mask_policy)
     return op0_inv_1bit
 
 def rev8(op0: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: TailPolicy = TailPolicy.UNDEFINED, mask_policy: MaskPolicy = MaskPolicy.UNDEFINED) -> Node:
@@ -135,29 +135,29 @@ def rev8(op0: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: Ta
     # word swap
     if elt_size > 32:
         word_mask = Immediate(get_scalar_format(op0.node_format), 0xffffffff & mask_elt_size)
-        op0_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0, word_mask, vl)
-        op0_hi = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 32), vl)
-        op0_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 32), vl)
-        op0_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_hi, word_mask, vl)
-        op0 = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
+        op0_lo = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0, word_mask, vl)
+        op0_hi = Operation(op0.node_format, OperationDescriptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 32), vl)
+        op0_lo_shift = Operation(op0.node_format, OperationDescriptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 32), vl)
+        op0_hi_masked = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0_hi, word_mask, vl)
+        op0 = Operation(op0.node_format, OperationDescriptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
     
     # half word swap
     if elt_size > 16:
         half_word_mask = Immediate(get_scalar_format(op0.node_format), 0xffff0000ffff & mask_elt_size)
-        op0_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0, half_word_mask, vl)
-        op0_hi = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 16), vl)
-        op0_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 16), vl)
-        op0_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_hi, half_word_mask, vl)
-        op0 = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
+        op0_lo = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0, half_word_mask, vl)
+        op0_hi = Operation(op0.node_format, OperationDescriptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 16), vl)
+        op0_lo_shift = Operation(op0.node_format, OperationDescriptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 16), vl)
+        op0_hi_masked = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0_hi, half_word_mask, vl)
+        op0 = Operation(op0.node_format, OperationDescriptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
 
     # last byte swap
     if elt_size > 8:
         byte_mask = Immediate(get_scalar_format(op0.node_format), 0xff00ff00ff00ff & mask_elt_size)
-        op0_lo = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0, byte_mask, vl)
-        op0_hi = Operation(op0.node_format, OperationDesciptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 8), vl)
-        op0_lo_shift = Operation(op0.node_format, OperationDesciptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 8), vl)
-        op0_hi_masked = Operation(op0.node_format, OperationDesciptor(OperationType.AND), op0_hi, byte_mask, vl)
-        op0 = Operation(op0.node_format, OperationDesciptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
+        op0_lo = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0, byte_mask, vl)
+        op0_hi = Operation(op0.node_format, OperationDescriptor(OperationType.SRL), op0, Immediate(get_scalar_format(op0.node_format), 8), vl)
+        op0_lo_shift = Operation(op0.node_format, OperationDescriptor(OperationType.SLL), op0_lo, Immediate(get_scalar_format(op0.node_format), 8), vl)
+        op0_hi_masked = Operation(op0.node_format, OperationDescriptor(OperationType.AND), op0_hi, byte_mask, vl)
+        op0 = Operation(op0.node_format, OperationDescriptor(OperationType.OR), op0_lo_shift, op0_hi_masked, vl)
     # patching the last op (necessarily a vor) for mask and tail support
     op0.vm = vm
     op0.dst = dst
@@ -215,7 +215,7 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
 
                     vuintm_vror_vv_prototype = Operation(
                         vuintm_t,
-                        OperationDesciptor(OperationType.ROR),
+                        OperationDescriptor(OperationType.ROR),
                         lhs,
                         rhs,
                         vl,
@@ -229,7 +229,7 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
 
                     vuintm_vror_vx_prototype = Operation(
                         vuintm_t,
-                        OperationDesciptor(OperationType.ROR),
+                        OperationDescriptor(OperationType.ROR),
                         lhs,
                         rhs_vx,
                         vl,
@@ -242,7 +242,7 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
 
                     vuintm_vrol_vv_prototype = Operation(
                         vuintm_t,
-                        OperationDesciptor(OperationType.ROL),
+                        OperationDescriptor(OperationType.ROL),
                         lhs,
                         rhs,
                         vl,
@@ -255,7 +255,7 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
 
                     vuintm_vrol_vx_prototype = Operation(
                         vuintm_t,
-                        OperationDesciptor(OperationType.ROL),
+                        OperationDescriptor(OperationType.ROL),
                         lhs,
                         rhs_vx,
                         vl,
@@ -268,7 +268,7 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
 
                     vuintm_vandn_vv_prototype = Operation(
                         vuintm_t,
-                        OperationDesciptor(OperationType.ANDN),
+                        OperationDescriptor(OperationType.ANDN),
                         lhs,
                         rhs,
                         vl,
@@ -281,7 +281,7 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
 
                     vuintm_vandn_vx_prototype = Operation(
                         vuintm_t,
-                        OperationDesciptor(OperationType.ANDN),
+                        OperationDescriptor(OperationType.ANDN),
                         lhs,
                         rhs_vx,
                         vl,
@@ -294,7 +294,7 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
 
                     vuintm_brev8_v_prototype = Operation(
                         vuintm_t,
-                        OperationDesciptor(OperationType.BREV8),
+                        OperationDescriptor(OperationType.BREV8),
                         lhs,
                         vl,
                         vm = mask,
@@ -306,7 +306,7 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
 
                     vuintm_rev8_v_prototype = Operation(
                         vuintm_t,
-                        OperationDesciptor(OperationType.REV8),
+                        OperationDescriptor(OperationType.REV8),
                         lhs,
                         vl,
                         vm = mask,
