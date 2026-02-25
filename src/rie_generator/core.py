@@ -193,6 +193,7 @@ class OperationType(Enum):
     WADD = auto()
     WADDU = auto()
     MV = auto()
+    ZEXT_VF2 = auto()
 
     # misc
     REINTERPRET = auto()
@@ -287,6 +288,8 @@ class OperationType(Enum):
             return "maxu"
         elif op_type == OperationType.VSETVLMAX:
             return "vsetvlmax"
+        elif op_type == OperationType.ZEXT_VF2:
+            return "zext.vf2"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
