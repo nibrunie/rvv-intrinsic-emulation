@@ -40,45 +40,54 @@ def vzip_emulation(vs1: Node, vs2: Node, vl: Node, vm: Node, vd: Node, tail_poli
     # if SEW < ELEN and Zvkb is supported, we could use widening shift operations
     # TODO: support LMUL=8 (by splitting)
     # TODO: support SEW = ELEN
-    widened_elt_type = EltType.widen(vs1.format.elt_type)
-    widened_lmul = LMULType.multiply(vs1.format.lmul, 2)
+    widened_elt_type = EltType.widen(vs1.node_format.elt_type)
+    widened_lmul = LMULType.multiply(vs1.node_format.lmul_type, 2)
     widened_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, widened_elt_type, widened_lmul)
+    vd_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, vs1.node_format.elt_type, widened_lmul)
+    twice_vl = Operation(
+        NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None),
+        OperationDescriptor(OperationType.MUL),
+        vl,
+        Immediate(NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None), 2),
+    )
     vs2_widened = Operation(
         widened_fmt,
         OperationDescriptor(OperationType.ZEXT_VF2),
         vs2,
-        vl,
-        vm=vm,
-        tail_policy=tail_policy,
-        mask_policy=mask_policy,
+        twice_vl,
     )
     vs1_widened = Operation(
         widened_fmt,
         OperationDescriptor(OperationType.ZEXT_VF2),
         vs1,
         vl,
-        vm=vm,
-        tail_policy=tail_policy,
-        mask_policy=mask_policy,
     )
     # vs1 also need to be shifted to odd positions
     vs1_shifted = Operation(
         widened_fmt,
         OperationDescriptor(OperationType.SLL),
         vs1_widened,
-        Immediate(element_size(vs1.format.elt_type), NodeFormatDescriptor(NodeFormatType.SCALAR, widened_elt_type, None)),
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, widened_elt_type, None), element_size(vs1.node_format.elt_type)),
         vl,
-        vm=vm,
-        tail_policy=tail_policy,
-        mask_policy=mask_policy,
+    )
+    vs2_casted = Operation(
+        vd_fmt,
+        OperationDescriptor(OperationType.REINTERPRET),
+        vs2_widened,
+    )
+    vs1_casted = Operation(
+        vd_fmt,
+        OperationDescriptor(OperationType.REINTERPRET),
+        vs1_shifted,
     )
     result = Operation(
-        widened_fmt,
+        vd_fmt,
         OperationDescriptor(OperationType.OR),
-        vs2_widened,
-        vs1_shifted,
-        vl,
+        vs2_casted,
+        vs1_casted,
+        twice_vl,
         vm=vm,
+        dst=vd,
         tail_policy=tail_policy,
         mask_policy=mask_policy,
     )
@@ -88,23 +97,23 @@ def vunzip_emulation(extractEven: bool, vs2: Node, vl: Node, vm: Node, vd: Node,
     """Emulate vunzip using base RVV 1.0 operations."""
     # if SEW < ELEN and Zvkb is supported, we could use widening shift operations
     # TODO: support SEW = ELEN
-    widened_elt_type = EltType.widen(vs2.format.elt_type)
-    widened_lmul = LMULType.divide(vs2.format.lmul, 2)
+    widened_elt_type = EltType.widen(vs2.node_format.elt_type)
+    widened_lmul = LMULType.divide(vs2.node_format.lmul_type, 2)
     # FIXME: we want the ceil(vl / 2)
     half_vl = Operation(
         NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.SIZE_T, None),
         OperationDescriptor(OperationType.DIV),
         vl,
-        Immediate(2, NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.SIZE_T, None)),
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.SIZE_T, None), 2),
     )
     widened_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, widened_elt_type, widened_lmul)
     vs2_cast = Operation(
         widened_fmt,
-        OperationDescriptor(OperationType.REINTERPRET_CAST),
+        OperationDescriptor(OperationType.REINTERPRET),
         vs2,
         half_vl,
     )
-    shift_amount = Immediate(0 if extractEven else element_size(vs2.format.elt_type), NodeFormatDescriptor(NodeFormatType.SCALAR, widened_elt_type, None))
+    shift_amount = Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, widened_elt_type, None), 0 if extractEven else element_size(vs2.node_format.elt_type))
     vs2_shifted = Operation(
         vs2.node_format,
         OperationDescriptor(OperationType.SRL),
@@ -112,6 +121,7 @@ def vunzip_emulation(extractEven: bool, vs2: Node, vl: Node, vm: Node, vd: Node,
         shift_amount,
         half_vl,
         vm=vm,
+        dst=vd,
         tail_policy=tail_policy,
         mask_policy=mask_policy,
     )
@@ -125,8 +135,8 @@ def vpair_emulation(pairEven: bool, vs1: Node, vs2: Node, vl: Node, vm: Node, vd
 # ---------------------------------------------------------------------------
 
 # TODO: adjust these to match the extension specification
-VALID_ELT_TYPES = [EltType.U8, EltType.U16, EltType.U32, EltType.U64]
-VALID_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4, LMULType.M8]
+VALID_ELT_TYPES = [EltType.U8, EltType.U16, EltType.U32] # Unsupported by emulation: EltType.U64
+VALID_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4]    # Unsupported by emulation: LMULType.M8
 
 
 # ---------------------------------------------------------------------------
@@ -174,11 +184,13 @@ def generate_zvzip_emulation(
 
     for elt_type in elt_types:
         for lmul in lmuls:
+            print(f"Generating zvzip for {elt_type} {lmul}")
             vuint_t = NodeFormatDescriptor(NodeFormatType.VECTOR, elt_type, lmul)
-            vbool_t = NodeFormatDescriptor(NodeFormatType.MASK, elt_type, lmul)
+            vbool_t = NodeFormatDescriptor(NodeFormatType.MASK, elt_type, LMULType.multiply(lmul, 2))
+            vd_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, elt_type, LMULType.multiply(lmul, 2))
 
-            lhs = Input(vuint_t, 0)
-            rhs = Input(vuint_t, 1)
+            vs2 = Input(vuint_t, 0, name="vs2")
+            vs1 = Input(vuint_t, 1, name="vs1")
             vm = Input(vbool_t, -2, name="vm")
             vd = Input(vuint_t, -1, name="vd")
 
@@ -187,25 +199,66 @@ def generate_zvzip_emulation(
                     dst = vd if tail_policy == TailPolicy.UNDISTURBED or mask_policy == MaskPolicy.UNDISTURBED else None
                     mask = vm if mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED) else None
 
-                    # TODO: build prototype + emulation Operation pairs here
-                    # Example pattern:
-                    #
-                    # proto = Operation(
-                    #     vuint_t,
-                    #     OperationDescriptor(OperationType.XXX),
-                    #     lhs, rhs, vl,
-                    #     vm=mask, tail_policy=tail_policy,
-                    #     mask_policy=mask_policy, dst=dst,
-                    # )
-                    # emul = my_operation(lhs, rhs, vl, vm=mask, dst=dst,
-                    #                     tail_policy=tail_policy,
-                    #                     mask_policy=mask_policy)
-                    #
-                    # if prototypes:
-                    #     output.append(generate_intrinsic_prototype(proto))
-                    # if definitions:
-                    #     output.append(generate_intrinsic_from_operation(proto, emul, attributes))
-                    pass
+                    # --- vzip: interleave two base vectors into a widened result ---
+                    # vzip only valid when widened elt_type and widened lmul exist
+
+                    vzip_vv_prototype = Operation(
+                        vd_fmt,
+                        OperationDescriptor(OperationType.ZIP),
+                        vs2,
+                        vs1,
+                        vl,
+                        vm=mask,
+                        tail_policy=tail_policy,
+                        mask_policy=mask_policy,
+                        dst=dst,
+                    )
+                    vzip_vv_emulation = vzip_emulation(vs2, vs1, vl, mask, dst, tail_policy, mask_policy)
+
+                    # --- vunzip.even / vunzip.odd: deinterleave widened vector ---
+                    # input is the widened (interleaved) vector, output is base format
+                    widened_input = Input(vuint_t, 0)
+
+                    vunzip_even_prototype = Operation(
+                        vuint_t,
+                        OperationDescriptor(OperationType.UNZIP_EVEN),
+                        widened_input,
+                        vl,
+                        vm=mask,
+                        tail_policy=tail_policy,
+                        mask_policy=mask_policy,
+                        dst=dst,
+                    )
+                    vunzip_even_emulation = vunzip_emulation(True, widened_input, vl, mask, dst, tail_policy, mask_policy)
+
+                    vunzip_odd_prototype = Operation(
+                        vuint_t,
+                        OperationDescriptor(OperationType.UNZIP_ODD),
+                        widened_input,
+                        vl,
+                        vm=mask,
+                        tail_policy=tail_policy,
+                        mask_policy=mask_policy,
+                        dst=dst,
+                    )
+                    vunzip_odd_emulation = vunzip_emulation(False, widened_input, vl, mask, dst, tail_policy, mask_policy)
+
+                    zvzip_insns = [
+                        (vzip_vv_prototype, vzip_vv_emulation),
+                        # (vunzip_even_prototype, vunzip_even_emulation),
+                        #(vunzip_odd_prototype, vunzip_odd_emulation),
+                    ]
+
+                    if prototypes:
+                        output.append("// prototypes")
+                        for proto, _ in zvzip_insns:
+                            output.append(generate_intrinsic_prototype(proto))
+                    if definitions:
+                        output.append("\n// intrinsics")
+                        for proto, emul in zvzip_insns:
+                            output.append(generate_intrinsic_from_operation(proto, emul, attributes=attributes))
+
+
 
     return "\n".join(output)
 
