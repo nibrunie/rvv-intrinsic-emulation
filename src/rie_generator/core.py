@@ -194,6 +194,9 @@ class OperationType(Enum):
     WADDU = auto()
     MV = auto()
     ZEXT_VF2 = auto()
+    ZIP = auto()
+    UNZIP_EVEN = auto()
+    UNZIP_ODD = auto()
 
     # misc
     REINTERPRET = auto()
@@ -289,7 +292,13 @@ class OperationType(Enum):
         elif op_type == OperationType.VSETVLMAX:
             return "vsetvlmax"
         elif op_type == OperationType.ZEXT_VF2:
-            return "zext.vf2"
+            return "zext_vf2"
+        elif op_type == OperationType.ZIP:
+            return "zip"
+        elif op_type == OperationType.UNZIP_EVEN:
+            return "unzip.even"
+        elif op_type == OperationType.UNZIP_ODD:
+            return "unzip.odd"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -403,8 +412,10 @@ def int_type_to_scalar_type(int_type: EltType) -> str:
         return "int32_t"
     elif int_type == EltType.U64:
         return "uint64_t"
+    elif int_type == EltType.SIZE_T:
+        return "size_t"
     else:
-        raise ValueError("Invalid integer type")
+        raise ValueError(f"Invalid integer type {int_type}")
 
 def int_type_to_vector_type(int_type: EltType, lmul_type: LMULType) -> str:
     if int_type == EltType.U8:
