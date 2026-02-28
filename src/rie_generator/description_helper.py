@@ -1,5 +1,5 @@
 from typing import Callable
-from .core import TailPolicy, MaskPolicy, Operation, OperationDescriptor, NodeFormatDescriptor, NodeFormatType, EltType, LMULType, Immediate, OperationType
+from .core import TailPolicy, MaskPolicy, Operation, OperationDescriptor, NodeFormatDescriptor, NodeFormatType, EltType, LMULType, Immediate, OperationType, Node
 
 def emulate_with_split_lmul(result_fmt: NodeFormatDescriptor, operands: list, vl: Node, generator: Callable, generator_extra_args: list, tail_policy: TailPolicy, mask_policy: MaskPolicy, vm: Node, generator_extra_kwargs: dict) -> Operation:
     """ generator is expected to follow the Generator API """
