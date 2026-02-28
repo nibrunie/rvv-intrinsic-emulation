@@ -196,9 +196,12 @@ class OperationType(Enum):
     ZIP = auto()
     UNZIP_EVEN = auto()
     UNZIP_ODD = auto()
+    PAIR_EVEN = auto()
+    PAIR_ODD = auto()
 
     # moves
     MV = auto()
+    MERGE = auto()
     SLIDEDOWN = auto()
     SLIDEUP = auto()
 
@@ -279,8 +282,6 @@ class OperationType(Enum):
             return "wadd"
         elif op_type == OperationType.WADDU:
             return "waddu"
-        elif op_type == OperationType.MV:
-            return "mv"
         elif op_type == OperationType.REINTERPRET:
             return "reinterpret"
         elif op_type == OperationType.CREATE:
@@ -305,6 +306,14 @@ class OperationType(Enum):
             return "unzipe"
         elif op_type == OperationType.UNZIP_ODD:
             return "unzipo"
+        elif op_type == OperationType.PAIR_EVEN:
+            return "paire"
+        elif op_type == OperationType.PAIR_ODD:
+            return "pairo"
+        elif op_type == OperationType.MV:
+            return "mv"
+        elif op_type == OperationType.MERGE:
+            return "merge"
         elif op_type == OperationType.SLIDEDOWN:
             return "slidedown"
         elif op_type == OperationType.SLIDEUP:
