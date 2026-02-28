@@ -315,7 +315,40 @@ def vunzip_emulation_elen(extractEven: bool, vs2: Node, vl: Node, vm: Node, vd: 
 
 
 def vpair_emulation(pairEven: bool, vs1: Node, vs2: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
-    pass
+    vm_merge_mask = Operation(
+        NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, LMULType.M1),
+        OperationDescriptor(OperationType.MV),
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U8, None), 0x55 if pairEven else 0xAA),
+        get_vlenb(),
+    )
+    # TODO: vm_merge_mask might need to be casted to a mask
+    merge_source = vs2 if pairEven else vs1
+    slide_source = vs1 if pairEven else vs2
+    slide_direction = OperationType.SLIDEUP if pairEven else OperationType.SLIDEDOWN
+    slide_result = Operation(
+        vs2.node_format,
+        OperationDescriptor(slide_direction),
+        slide_source,
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.SIZE_T, None), 1),
+        vl,
+        dst=vd,
+        tail_policy=tail_policy,
+        mask_policy=MaskPolicy.UNMASKED,
+    )
+
+    merge_result = Operation(
+        vs2.node_format,
+        OperationDescriptor(OperationType.MERGE),
+        slide_result,
+        merge_source,
+        vm_merge_mask,
+        vl,
+        dst=vd,
+        tail_policy=tail_policy,
+        mask_policy=MaskPolicy.UNMASKED,
+    )
+    # FIXME: final masking with vpair[e/o] is required here to implement masking support
+    return merge_result    
 
 # ---------------------------------------------------------------------------
 # Valid parameter spaces
@@ -430,10 +463,38 @@ def generate_zvzip_emulation(
                     )
                     vunzip_odd_emulation = vunzip_emulation(False, widened_input, vl, mask, dst, tail_policy, mask_policy)
 
+                    vpair_even_prototype = Operation(
+                        vuint_t,
+                        OperationDescriptor(OperationType.PAIR_EVEN),
+                        vs2,
+                        vs1,
+                        vl,
+                        vm=mask,
+                        tail_policy=tail_policy,
+                        mask_policy=mask_policy,
+                        dst=dst,
+                    )
+                    vpair_even_emulation = vpair_emulation(True, vs1, vs2, vl, mask, dst, tail_policy, mask_policy)
+
+                    vpair_odd_prototype = Operation(
+                        vuint_t,
+                        OperationDescriptor(OperationType.PAIR_ODD),
+                        vs2,
+                        vs1,
+                        vl,
+                        vm=mask,
+                        tail_policy=tail_policy,
+                        mask_policy=mask_policy,
+                        dst=dst,
+                    )
+                    vpair_odd_emulation = vpair_emulation(False, vs1, vs2, vl, mask, dst, tail_policy, mask_policy)
+
                     zvzip_insns = [
                         (vzip_vv_prototype, vzip_vv_emulation),
                         (vunzip_even_prototype, vunzip_even_emulation),
                         (vunzip_odd_prototype, vunzip_odd_emulation),
+                        (vpair_even_prototype, vpair_even_emulation),
+                        (vpair_odd_prototype, vpair_odd_emulation),
                     ]
 
                     if prototypes:
