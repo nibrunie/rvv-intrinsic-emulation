@@ -192,11 +192,15 @@ class OperationType(Enum):
     WMULSU = auto()
     WADD = auto()
     WADDU = auto()
-    MV = auto()
     ZEXT_VF2 = auto()
     ZIP = auto()
     UNZIP_EVEN = auto()
     UNZIP_ODD = auto()
+
+    # moves
+    MV = auto()
+    SLIDEDOWN = auto()
+    SLIDEUP = auto()
 
     # misc
     REINTERPRET = auto()
@@ -296,9 +300,13 @@ class OperationType(Enum):
         elif op_type == OperationType.ZIP:
             return "zip"
         elif op_type == OperationType.UNZIP_EVEN:
-            return "unzip.even"
+            return "unzipe"
         elif op_type == OperationType.UNZIP_ODD:
-            return "unzip.odd"
+            return "unzipo"
+        elif op_type == OperationType.SLIDEDOWN:
+            return "slidedown"
+        elif op_type == OperationType.SLIDEUP:
+            return "slideup"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
