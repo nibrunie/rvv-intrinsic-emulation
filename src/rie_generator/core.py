@@ -202,6 +202,8 @@ class OperationType(Enum):
     SLIDEDOWN = auto()
     SLIDEUP = auto()
 
+    COMPRESS = auto()
+
     # misc
     REINTERPRET = auto()
     CREATE = auto()
@@ -307,6 +309,8 @@ class OperationType(Enum):
             return "slidedown"
         elif op_type == OperationType.SLIDEUP:
             return "slideup"
+        elif op_type == OperationType.COMPRESS:
+            return "compress"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 

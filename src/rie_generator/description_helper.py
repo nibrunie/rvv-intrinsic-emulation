@@ -53,6 +53,18 @@ def emulate_with_split_lmul(result_fmt: NodeFormatDescriptor, operands: list, vl
     result = Operation(full_result_fmt, OperationDescriptor(OperationType.CREATE),
                        result_lo, result_hi)
     return result
+
+def get_vlmax(elt_type: EltType, lmul_type: LMULType) -> Node:
+    vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
+    vlmax_fmt = NodeFormatDescriptor(NodeFormatType.PLACEHOLDER, elt_type, lmul_type)
+    vlmax_placeholder = Immediate(vlmax_fmt, None)
+    vlmax = Operation(vl_fmt, OperationDescriptor(OperationType.VSETVLMAX), vlmax_placeholder)
+    return vlmax
+
+def get_vlenb() -> Node:
+    """Get vlenb (VLEN in bytes) as a Node"""
+    return get_vlmax(EltType.U8, LMULType.M1)
+    
     
     
     

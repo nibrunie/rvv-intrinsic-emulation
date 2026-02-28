@@ -23,6 +23,8 @@ from .core import (
     MaskPolicy,
 )
 
+from .description_helper import get_vlenb
+
 
 # ---------------------------------------------------------------------------
 # Emulation building blocks
@@ -82,10 +84,7 @@ def vzip_emulation_elen(vs1: Node, vs2: Node, vl: Node, vm: Node, vd: Node, tail
         vs2_extended,
     )
     # build mask/
-    vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
-    vlenb_fmt = NodeFormatDescriptor(NodeFormatType.PLACEHOLDER, EltType.U8, LMULType.M1)
-    vlenb_placeholder = Immediate(vlenb_fmt, None)
-    vlenb = Operation(vl_fmt, OperationDescriptor(OperationType.VSETVLMAX), vlenb_placeholder)
+    vlenb = get_vlenb()
 
     vm_vs2_slide = Operation(
         NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, LMULType.M1),
@@ -232,9 +231,15 @@ def vzip_emulation_non_elen(vs1: Node, vs2: Node, vl: Node, vm: Node, vd: Node, 
     return result
 
 def vunzip_emulation(extractEven: bool, vs2: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
-    """Emulate vunzip using base RVV 1.0 operations."""
-    # if SEW < ELEN and Zvkb is supported, we could use widening shift operations
-    # TODO: support SEW = ELEN
+    elen = 64 # FIXME: should be derived from target
+    if element_size(vs2.node_format.elt_type) < elen:
+        return vunzip_emulation_non_elen(extractEven, vs2, vl, vm, vd, tail_policy, mask_policy)
+    else:
+        return vunzip_emulation_elen(extractEven, vs2, vl, vm, vd, tail_policy, mask_policy)
+
+def vunzip_emulation_non_elen(extractEven: bool, vs2: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
+    """Emulate vunzip (when SEW < ELEN) using base RVV 1.0 operations."""
+    # as SEW < ELEN, if Zvkb is supported, we could use widening shift operations
     widened_elt_type = EltType.widen(vs2.node_format.elt_type)
     widened_lmul = LMULType.divide(vs2.node_format.lmul_type, 2)
     # FIXME: we want the ceil(vl / 2)
@@ -264,6 +269,50 @@ def vunzip_emulation(extractEven: bool, vs2: Node, vl: Node, vm: Node, vd: Node,
         mask_policy=mask_policy,
     )
     return vs2_shifted    
+
+def vunzip_emulation_elen(extractEven: bool, vs2: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
+    """Emulate vunzip (when SEW = ELEN) using base RVV 1.0 operations."""
+    narrowed_lmul = LMULType.divide(vs2.node_format.lmul_type, 2)
+    vd_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, vs2.node_format.elt_type, narrowed_lmul)
+    # even if the destination format as half the LMUL value of the sources (a), we need to keep the source LMUL when
+    # emulating with a vcompress since 2*VL elements might be accessed from the source.
+    #
+    # Note (a): actually destination has EMUL=LMUL, and source has EMUL=2*LMUL
+    vlenb = get_vlenb()
+    # building mask for vcompress
+    vm_extract = Operation(
+        NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, LMULType.M1),
+        OperationDescriptor(OperationType.MV),
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U8, None), 0x55 if extractEven else 0xAA),
+        vlenb,
+    )
+    vd_raw = Operation(
+        vs2.node_format,
+        OperationDescriptor(OperationType.COMPRESS),
+        vs2,
+        vm_extract,
+        vl,
+        dst=vd,
+        tail_policy=tail_policy,
+        mask_policy=MaskPolicy.UNMASKED,
+    )
+    idx_fmt = NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.SIZE_T, None)
+    result_unmasked = Operation(vd_fmt, OperationDescriptor(OperationType.GET), vd_raw, Immediate(idx_fmt, 0))
+    # implementing masking
+    if mask_policy == MaskPolicy.UNMASKED:
+        return result_unmasked
+    else:
+        return Operation(
+            vd_fmt,
+            OperationDescriptor(OperationType.MV),
+            result_unmasked,
+            vl,
+            vm=vm,
+            dst=vd,
+            tail_policy=tail_policy,
+            mask_policy=mask_policy,
+        )
+
 
 def vpair_emulation(pairEven: bool, vs1: Node, vs2: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
     pass
@@ -355,7 +404,7 @@ def generate_zvzip_emulation(
 
                     # --- vunzip.even / vunzip.odd: deinterleave widened vector ---
                     # input is the widened (interleaved) vector, output is base format
-                    widened_input = Input(vuint_t, 0)
+                    widened_input = Input(vd_fmt, 0)
 
                     vunzip_even_prototype = Operation(
                         vuint_t,
@@ -383,8 +432,8 @@ def generate_zvzip_emulation(
 
                     zvzip_insns = [
                         (vzip_vv_prototype, vzip_vv_emulation),
-                        # (vunzip_even_prototype, vunzip_even_emulation),
-                        #(vunzip_odd_prototype, vunzip_odd_emulation),
+                        (vunzip_even_prototype, vunzip_even_emulation),
+                        (vunzip_odd_prototype, vunzip_odd_emulation),
                     ]
 
                     if prototypes:
