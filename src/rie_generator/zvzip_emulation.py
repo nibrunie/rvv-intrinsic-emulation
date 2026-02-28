@@ -13,7 +13,6 @@ from .core import (
     Immediate,
     Input,
     Node,
-    get_scalar_format,
     element_size,
     EltType,
     LMULType,
@@ -29,17 +28,156 @@ from .core import (
 # Emulation building blocks
 # ---------------------------------------------------------------------------
 
-# TODO: add emulation functions here, e.g.:
-#
-# def my_operation(op0: Node, vl: Node, ...) -> Operation:
-#     """Emulate <instruction> using base RVV 1.0 operations."""
-#     ...
-
 def vzip_emulation(vs1: Node, vs2: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
-    """Emulate vzip using base RVV 1.0 operations."""
     # if SEW < ELEN and Zvkb is supported, we could use widening shift operations
-    # TODO: support LMUL=8 (by splitting)
+    # No need to support LMUL=8 inputs (since vzip does not support it, as destination EMUL would exceed 8)
     # TODO: support SEW = ELEN
+    elen = 64
+    if element_size(vs1.node_format.elt_type) == elen:
+        return vzip_emulation_elen(vs1, vs2, vl, vm, vd, tail_policy, mask_policy)
+    else:
+        return vzip_emulation_non_elen(vs1, vs2, vl, vm, vd, tail_policy, mask_policy)
+
+def vzip_emulation_elen(vs1: Node, vs2: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
+    """Emulate vzip when SEW = ELEN using base RVV 1.0 operations."""
+    narrowed_elt_type = EltType.narrow(vs1.node_format.elt_type)
+    widened_lmul = LMULType.multiply(vs1.node_format.lmul_type, 2)
+    fmt_narrow_elt = NodeFormatDescriptor(NodeFormatType.VECTOR, narrowed_elt_type, vs1.node_format.lmul_type)
+    widened_fmt_narrow_elt = NodeFormatDescriptor(NodeFormatType.VECTOR, narrowed_elt_type, widened_lmul)
+    widened_fmt_std_elt = NodeFormatDescriptor(NodeFormatType.VECTOR, vs1.node_format.elt_type, widened_lmul)
+    # destination format (EMUL=2*LMUL, EEW=SEW)
+    vd_fmt = widened_fmt_std_elt
+    twice_vl = Operation(
+        NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None),
+        OperationDescriptor(OperationType.MUL),
+        vl,
+        Immediate(NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None), 2),
+    )
+    four_vl = Operation(
+        NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None),
+        OperationDescriptor(OperationType.MUL),
+        vl,
+        Immediate(NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None), 4),
+    )
+    vs2_narrow_casted = Operation(
+        fmt_narrow_elt,
+        OperationDescriptor(OperationType.REINTERPRET),
+        vs2,
+    )
+    vs1_narrow_casted = Operation(
+        fmt_narrow_elt,
+        OperationDescriptor(OperationType.REINTERPRET),
+        vs1,
+    )
+
+    vs2_extended = Operation(
+        widened_fmt_std_elt,
+        OperationDescriptor(OperationType.ZEXT_VF2),
+        vs2_narrow_casted,
+        twice_vl,
+    )
+    vs2_casted_std_elt = Operation(
+        widened_fmt_narrow_elt,
+        OperationDescriptor(OperationType.REINTERPRET),
+        vs2_extended,
+    )
+    # build mask/
+    vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
+    vlenb_fmt = NodeFormatDescriptor(NodeFormatType.PLACEHOLDER, EltType.U8, LMULType.M1)
+    vlenb_placeholder = Immediate(vlenb_fmt, None)
+    vlenb = Operation(vl_fmt, OperationDescriptor(OperationType.VSETVLMAX), vlenb_placeholder)
+
+    vm_vs2_slide = Operation(
+        NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, LMULType.M1),
+        OperationDescriptor(OperationType.MV),
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U8, None), 0x66),
+        vlenb,
+    )
+    vs2_slided = Operation(
+        widened_fmt_narrow_elt,
+        OperationDescriptor(OperationType.SLIDEDOWN),
+        vs2_casted_std_elt,
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, narrowed_elt_type, None), 1),
+        four_vl,
+        vm=vm_vs2_slide,
+        mask_policy=MaskPolicy.UNDISTURBED,
+        tail_policy=TailPolicy.AGNOSTIC,
+        dst=vs2_casted_std_elt
+    )
+    vs2_result_casted = Operation(
+        vd_fmt,
+        OperationDescriptor(OperationType.REINTERPRET),
+        vs2_slided,
+    )
+
+    vs1_extended = Operation(
+        widened_fmt_std_elt,
+        OperationDescriptor(OperationType.ZEXT_VF2),
+        vs1_narrow_casted,
+        twice_vl,
+    )
+    vs1_casted_std_elt = Operation(
+        widened_fmt_std_elt,
+        OperationDescriptor(OperationType.REINTERPRET),
+        vs1_extended,
+    )
+    vm_vs1_hi_slide = Operation(
+        NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, LMULType.M1),
+        OperationDescriptor(OperationType.MV),
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U8, None), 0x88),
+        vlenb,
+    )
+    vm_vs1_lo_slide = Operation(
+        NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, LMULType.M1),
+        OperationDescriptor(OperationType.MV),
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, EltType.U8, None), 0x44),
+        vlenb,
+    )
+    vs1_hi_slided = Operation(
+        widened_fmt_narrow_elt,
+        OperationDescriptor(OperationType.SLIDEUP),
+        vs1_casted_std_elt,
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, narrowed_elt_type, None), 1),
+        four_vl,
+        vm=vm_vs1_hi_slide,
+        mask_policy=MaskPolicy.UNDISTURBED,
+        tail_policy=TailPolicy.AGNOSTIC,
+        dst=vs1_casted_std_elt
+    )
+    vs1_lo_slided = Operation(
+        widened_fmt_narrow_elt,
+        OperationDescriptor(OperationType.SLIDEUP),
+        vs1_casted_std_elt,
+        Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, narrowed_elt_type, None), 2),
+        four_vl,
+        vm=vm_vs1_lo_slide,
+        mask_policy=MaskPolicy.UNDISTURBED,
+        tail_policy=TailPolicy.AGNOSTIC,
+        dst=vs1_hi_slided
+    )
+    vs1_result_casted = Operation(
+        vd_fmt,
+        OperationDescriptor(OperationType.REINTERPRET),
+        vs1_lo_slided,
+    )
+    # combining vs2 and vs1_lo_slided
+    result = Operation(
+        vd_fmt,
+        OperationDescriptor(OperationType.OR),
+        vs2_result_casted,
+        vs1_result_casted,
+        twice_vl,
+        vm=vm,
+        dst=vd,
+        tail_policy=tail_policy,
+        mask_policy=mask_policy,
+    )
+    return result
+
+    
+
+def vzip_emulation_non_elen(vs1: Node, vs2: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
+    """Emulate vzip when SEW < ELEN using base RVV 1.0 operations."""
     widened_elt_type = EltType.widen(vs1.node_format.elt_type)
     widened_lmul = LMULType.multiply(vs1.node_format.lmul_type, 2)
     widened_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, widened_elt_type, widened_lmul)
@@ -135,7 +273,7 @@ def vpair_emulation(pairEven: bool, vs1: Node, vs2: Node, vl: Node, vm: Node, vd
 # ---------------------------------------------------------------------------
 
 # TODO: adjust these to match the extension specification
-VALID_ELT_TYPES = [EltType.U8, EltType.U16, EltType.U32] # Unsupported by emulation: EltType.U64
+VALID_ELT_TYPES = [EltType.U8, EltType.U16, EltType.U32, EltType.U64] # Unsupported by emulation: EltType.U64
 VALID_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4]    # Unsupported by emulation: LMULType.M8
 
 
