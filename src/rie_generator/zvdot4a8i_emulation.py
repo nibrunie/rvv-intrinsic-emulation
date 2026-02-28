@@ -38,12 +38,12 @@ def dot4_pipeline(
         vs2: Node,
         vs1: Node,
         vd: Node,
-        vl: Node,
         wmul_op: OperationType,
         wadd_op: OperationType,
         lmul: LMULType,
-        tail_policy: TailPolicy,
-        mask_policy: MaskPolicy,
+        vl: Node,
+        tail_policy: TailPolicy=TailPolicy.AGNOSTIC,
+        mask_policy: MaskPolicy=MaskPolicy.UNMASKED,
         vm: Node = None
     ) -> Node:
     """Common dot product emulation pipeline.
@@ -105,12 +105,12 @@ def dot4_pipeline(
         # FIXME: implement mask support (through either mask splitting or masked merged with LMUL=8)
 
         # Process each M4 half independently
-        result_lo = dot4_pipeline(vs2_lo, vs1_lo, vd_lo, vl_lo,
-                                  wmul_op, wadd_op, half_lmul,
-                                  tail_policy, MaskPolicy.UNMASKED, vm=None)
-        result_hi = dot4_pipeline(vs2_hi, vs1_hi, vd_hi, vl_hi,
-                                  wmul_op, wadd_op, half_lmul,
-                                  tail_policy, MaskPolicy.UNMASKED, vm=None)
+        result_lo = dot4_pipeline(vs2_lo, vs1_lo, vd_lo,
+                                  wmul_op, wadd_op, half_lmul, vl_lo,
+                                  tail_policy=tail_policy, mask_policy=MaskPolicy.UNMASKED, vm=None)
+        result_hi = dot4_pipeline(vs2_hi, vs1_hi, vd_hi,
+                                  wmul_op, wadd_op, half_lmul, vl_hi,
+                                  tail_policy=tail_policy, mask_policy=MaskPolicy.UNMASKED, vm=None)
 
         # CREATE: reassemble two M4 results into M8 (result type matches vd)
         result_elt = vd.node_format.elt_type
@@ -318,7 +318,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                     vd_u, vs2_u, vs1_u, vl,
                     dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_dota4u_vv = dot4_pipeline(vs2_u, vs1_u, vd_u, vl, OperationType.WMULU, OperationType.WADDU, lmul, tail_policy, mask_policy, vm)
+                emul_dota4u_vv = dot4_pipeline(vs2_u, vs1_u, vd_u, OperationType.WMULU, OperationType.WADDU, lmul, vl, tail_policy, mask_policy, vm)
                 zvdot4a8i_insns.append((proto_dota4u_vv, emul_dota4u_vv))
 
                 # vx: use vector-scalar widening multiply directly
@@ -327,7 +327,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                     vd_u, vs2_u, rs1_u, vl,
                     dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_dota4u_vx = dot4_pipeline(vs2_u, rs1_u, vd_u, vl, OperationType.WMULU, OperationType.WADDU, lmul, tail_policy, mask_policy, vm)
+                emul_dota4u_vx = dot4_pipeline(vs2_u, rs1_u, vd_u, OperationType.WMULU, OperationType.WADDU, lmul, vl, tail_policy, mask_policy, vm)
                 zvdot4a8i_insns.append((proto_dota4u_vx, emul_dota4u_vx))
 
                 # --- vdota4: signed-signed ---
@@ -337,7 +337,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                     vd_s, vs2_s, vs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_dota4_vv = dot4_pipeline(vs2_s, vs1_s, vd_s, vl, OperationType.WMUL, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                emul_dota4_vv = dot4_pipeline(vs2_s, vs1_s, vd_s, OperationType.WMUL, OperationType.WADD, lmul, vl, tail_policy, mask_policy, vm)
                 zvdot4a8i_insns.append((proto_dota4_vv, emul_dota4_vv))
 
                 # vx
@@ -346,7 +346,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                     vd_s, vs2_s, rs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_dota4_vx = dot4_pipeline(vs2_s, rs1_s, vd_s, vl, OperationType.WMUL, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                emul_dota4_vx = dot4_pipeline(vs2_s, rs1_s, vd_s, OperationType.WMUL, OperationType.WADD, lmul, vl, tail_policy, mask_policy, vm)
                 zvdot4a8i_insns.append((proto_dota4_vx, emul_dota4_vx))
 
                 # --- vdota4su: signed(vs2)-unsigned(vs1) ---
@@ -356,7 +356,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                     vd_s, vs2_s, vs1_u, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_dota4su_vv = dot4_pipeline(vs2_s, vs1_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                emul_dota4su_vv = dot4_pipeline(vs2_s, vs1_u, vd_s, OperationType.WMULSU, OperationType.WADD, lmul, vl, tail_policy, mask_policy, vm)
                 zvdot4a8i_insns.append((proto_dota4su_vv, emul_dota4su_vv))
 
                 # vx
@@ -365,7 +365,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                     vd_s, vs2_s, rs1_u, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_dota4su_vx = dot4_pipeline(vs2_s, rs1_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                emul_dota4su_vx = dot4_pipeline(vs2_s, rs1_u, vd_s, OperationType.WMULSU, OperationType.WADD, lmul, vl, tail_policy, mask_policy, vm)
                 zvdot4a8i_insns.append((proto_dota4su_vx, emul_dota4su_vx))
 
                 # --- vdota4us: unsigned(vs2)-signed(rs1), vx only ---
@@ -377,7 +377,7 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
                 # Pass rs1 first (signed) and vs2 second (unsigned) for vwmulsu
-                emul_dota4us_vx = dot4_pipeline(rs1_s, vs2_u, vd_s, vl, OperationType.WMULSU, OperationType.WADD, lmul, tail_policy, mask_policy, vm)
+                emul_dota4us_vx = dot4_pipeline(rs1_s, vs2_u, vd_s, OperationType.WMULSU, OperationType.WADD, lmul, vl, tail_policy, mask_policy, vm)
                 zvdot4a8i_insns.append((proto_dota4us_vx, emul_dota4us_vx))
 
                 lmul_str = LMULType.to_string(lmul)
