@@ -458,10 +458,14 @@ def int_type_to_vector_type(int_type: EltType, lmul_type: LMULType) -> str:
     else:
         raise ValueError(f"Invalid integer type: {int_type}")
 
-def vector_type_to_mask_type(node_format: NodeFormatDescriptor) -> str:
+def vector_mask_bool_size(node_format: NodeFormatDescriptor) -> int:
     elt_size = element_size(node_format.elt_type)
     lmul_value = LMULType.to_value(node_format.lmul_type)
     n = int(elt_size / lmul_value)
+    return n
+
+def vector_type_to_mask_type(node_format: NodeFormatDescriptor) -> str:
+    n = vector_mask_bool_size(node_format)
     return f"vbool{n}_t"
 
 def generate_node_format_type_string(node_format: NodeFormatDescriptor) -> str:
@@ -479,6 +483,8 @@ def generate_node_format_type_string(node_format: NodeFormatDescriptor) -> str:
         raise ValueError("Invalid operand type")
 
 def generate_intrinsic_type_tag(node_format: NodeFormatDescriptor) -> str:
+    if node_format.node_format_type == NodeFormatType.MASK:
+        return f"b{vector_mask_bool_size(node_format)}"
     type_tag = {
         EltType.U8: "u8",
         EltType.S8: "i8",
@@ -497,7 +503,7 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     # building operand type descriptor (vv, vx, vi)
     operand_type_descriptor = "_" # initial "_" to allow removal (e.g. vzext) 
     for (index, arg) in enumerate(prototype.args):
-        if len(prototype.args) > 3 and index == 0:
+        if len(prototype.args) > 3 and index == 0 and prototype.op_desc.op_type not in [OperationType.MERGE]:
             # for 3-operand instructions (e.g. vfmadd or vwmacc), the first operand is never
             # described in the name suffix
             # Note: 3-operand instructions have actually 4 operands when vl is taken into account
@@ -514,6 +520,8 @@ def generate_intrinsic_name(prototype: Operation) -> str:
             operand_type_descriptor += "x"
         elif arg.node_format.node_format_type == NodeFormatType.IMMEDIATE:
             operand_type_descriptor += "i"
+        elif arg.node_format.node_format_type == NodeFormatType.MASK:
+            operand_type_descriptor += "m"
     # Some intrinsics (e.g. reinterpret, create, get) require the source type
     # to be displayed in the name suffix, and use 'v' as operand descriptor
     if prototype.op_desc.op_type in [OperationType.REINTERPRET, OperationType.CREATE, OperationType.GET]:
@@ -524,10 +532,9 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     if prototype.op_desc.op_type in [OperationType.ZEXT_VF2]:
         operand_type_descriptor = ""
 
-
-    if prototype.op_desc.op_type in [OperationType.MERGE]:
-        # vmerge is always a v[vxi]m operation
-        operand_type_descriptor += "m"
+    # if prototype.op_desc.op_type in [OperationType.MERGE]:
+    #    # vmerge is always a v[vxi]m operation
+    #    operand_type_descriptor += "m"
 
     suffix = ""
     # in rvv-intrinsics-doc, tail policy always come before mask policy
