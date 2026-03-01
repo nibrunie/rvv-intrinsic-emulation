@@ -495,7 +495,7 @@ def generate_intrinsic_type_tag(node_format: NodeFormatDescriptor) -> str:
 def generate_intrinsic_name(prototype: Operation) -> str:
     intrinsic_type_tag = generate_intrinsic_type_tag(prototype.node_format)
     # building operand type descriptor (vv, vx, vi)
-    operand_type_descriptor = ""
+    operand_type_descriptor = "_" # initial "_" to allow removal (e.g. vzext) 
     for (index, arg) in enumerate(prototype.args):
         if len(prototype.args) > 3 and index == 0:
             # for 3-operand instructions (e.g. vfmadd or vwmacc), the first operand is never
@@ -519,7 +519,16 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     if prototype.op_desc.op_type in [OperationType.REINTERPRET, OperationType.CREATE, OperationType.GET]:
         source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
         intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
-        operand_type_descriptor = "v"
+        operand_type_descriptor = "_v"
+
+    if prototype.op_desc.op_type in [OperationType.ZEXT_VF2]:
+        operand_type_descriptor = ""
+
+
+    if prototype.op_desc.op_type in [OperationType.MERGE]:
+        # vmerge is always a v[vxi]m operation
+        operand_type_descriptor += "m"
+
     suffix = ""
     # in rvv-intrinsics-doc, tail policy always come before mask policy
     # TODO: handle tail and mask AGNOSTIC policies
@@ -532,8 +541,8 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     suffix = f"_{suffix}" if suffix != "" else ""
     # vmv uses special naming: __riscv_vmv_v_x_<type> (v_ prefix for destination)
     if prototype.op_desc.op_type == OperationType.MV:
-        operand_type_descriptor = f"v_{operand_type_descriptor}"
-    intrinsic_name = f"__riscv_v{OperationType.to_string(prototype.op_desc.op_type)}_{operand_type_descriptor}_{intrinsic_type_tag}{suffix}"
+        operand_type_descriptor = f"_v{operand_type_descriptor}"
+    intrinsic_name = f"__riscv_v{OperationType.to_string(prototype.op_desc.op_type)}{operand_type_descriptor}_{intrinsic_type_tag}{suffix}"
     return intrinsic_name
 
 def generate_intrinsic_prototype(prototype: Operation) -> str:
