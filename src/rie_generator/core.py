@@ -192,7 +192,20 @@ class OperationType(Enum):
     WMULSU = auto()
     WADD = auto()
     WADDU = auto()
+    ZEXT_VF2 = auto()
+    ZIP = auto()
+    UNZIP_EVEN = auto()
+    UNZIP_ODD = auto()
+    PAIR_EVEN = auto()
+    PAIR_ODD = auto()
+
+    # moves
     MV = auto()
+    MERGE = auto()
+    SLIDEDOWN = auto()
+    SLIDEUP = auto()
+
+    COMPRESS = auto()
 
     # misc
     REINTERPRET = auto()
@@ -269,8 +282,6 @@ class OperationType(Enum):
             return "wadd"
         elif op_type == OperationType.WADDU:
             return "waddu"
-        elif op_type == OperationType.MV:
-            return "mv"
         elif op_type == OperationType.REINTERPRET:
             return "reinterpret"
         elif op_type == OperationType.CREATE:
@@ -287,6 +298,28 @@ class OperationType(Enum):
             return "maxu"
         elif op_type == OperationType.VSETVLMAX:
             return "vsetvlmax"
+        elif op_type == OperationType.ZEXT_VF2:
+            return "zext_vf2"
+        elif op_type == OperationType.ZIP:
+            return "zip"
+        elif op_type == OperationType.UNZIP_EVEN:
+            return "unzipe"
+        elif op_type == OperationType.UNZIP_ODD:
+            return "unzipo"
+        elif op_type == OperationType.PAIR_EVEN:
+            return "paire"
+        elif op_type == OperationType.PAIR_ODD:
+            return "pairo"
+        elif op_type == OperationType.MV:
+            return "mv"
+        elif op_type == OperationType.MERGE:
+            return "merge"
+        elif op_type == OperationType.SLIDEDOWN:
+            return "slidedown"
+        elif op_type == OperationType.SLIDEUP:
+            return "slideup"
+        elif op_type == OperationType.COMPRESS:
+            return "compress"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -400,8 +433,10 @@ def int_type_to_scalar_type(int_type: EltType) -> str:
         return "int32_t"
     elif int_type == EltType.U64:
         return "uint64_t"
+    elif int_type == EltType.SIZE_T:
+        return "size_t"
     else:
-        raise ValueError("Invalid integer type")
+        raise ValueError(f"Invalid integer type {int_type}")
 
 def int_type_to_vector_type(int_type: EltType, lmul_type: LMULType) -> str:
     if int_type == EltType.U8:
@@ -423,10 +458,14 @@ def int_type_to_vector_type(int_type: EltType, lmul_type: LMULType) -> str:
     else:
         raise ValueError(f"Invalid integer type: {int_type}")
 
-def vector_type_to_mask_type(node_format: NodeFormatDescriptor) -> str:
+def vector_mask_bool_size(node_format: NodeFormatDescriptor) -> int:
     elt_size = element_size(node_format.elt_type)
     lmul_value = LMULType.to_value(node_format.lmul_type)
     n = int(elt_size / lmul_value)
+    return n
+
+def vector_type_to_mask_type(node_format: NodeFormatDescriptor) -> str:
+    n = vector_mask_bool_size(node_format)
     return f"vbool{n}_t"
 
 def generate_node_format_type_string(node_format: NodeFormatDescriptor) -> str:
@@ -444,6 +483,8 @@ def generate_node_format_type_string(node_format: NodeFormatDescriptor) -> str:
         raise ValueError("Invalid operand type")
 
 def generate_intrinsic_type_tag(node_format: NodeFormatDescriptor) -> str:
+    if node_format.node_format_type == NodeFormatType.MASK:
+        return f"b{vector_mask_bool_size(node_format)}"
     type_tag = {
         EltType.U8: "u8",
         EltType.S8: "i8",
@@ -460,9 +501,9 @@ def generate_intrinsic_type_tag(node_format: NodeFormatDescriptor) -> str:
 def generate_intrinsic_name(prototype: Operation) -> str:
     intrinsic_type_tag = generate_intrinsic_type_tag(prototype.node_format)
     # building operand type descriptor (vv, vx, vi)
-    operand_type_descriptor = ""
+    operand_type_descriptor = "_" # initial "_" to allow removal (e.g. vzext) 
     for (index, arg) in enumerate(prototype.args):
-        if len(prototype.args) > 3 and index == 0:
+        if len(prototype.args) > 3 and index == 0 and prototype.op_desc.op_type not in [OperationType.MERGE]:
             # for 3-operand instructions (e.g. vfmadd or vwmacc), the first operand is never
             # described in the name suffix
             # Note: 3-operand instructions have actually 4 operands when vl is taken into account
@@ -479,12 +520,22 @@ def generate_intrinsic_name(prototype: Operation) -> str:
             operand_type_descriptor += "x"
         elif arg.node_format.node_format_type == NodeFormatType.IMMEDIATE:
             operand_type_descriptor += "i"
+        elif arg.node_format.node_format_type == NodeFormatType.MASK:
+            operand_type_descriptor += "m"
     # Some intrinsics (e.g. reinterpret, create, get) require the source type
     # to be displayed in the name suffix, and use 'v' as operand descriptor
     if prototype.op_desc.op_type in [OperationType.REINTERPRET, OperationType.CREATE, OperationType.GET]:
         source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
         intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
-        operand_type_descriptor = "v"
+        operand_type_descriptor = "_v"
+
+    if prototype.op_desc.op_type in [OperationType.ZEXT_VF2]:
+        operand_type_descriptor = ""
+
+    # if prototype.op_desc.op_type in [OperationType.MERGE]:
+    #    # vmerge is always a v[vxi]m operation
+    #    operand_type_descriptor += "m"
+
     suffix = ""
     # in rvv-intrinsics-doc, tail policy always come before mask policy
     # TODO: handle tail and mask AGNOSTIC policies
@@ -497,8 +548,8 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     suffix = f"_{suffix}" if suffix != "" else ""
     # vmv uses special naming: __riscv_vmv_v_x_<type> (v_ prefix for destination)
     if prototype.op_desc.op_type == OperationType.MV:
-        operand_type_descriptor = f"v_{operand_type_descriptor}"
-    intrinsic_name = f"__riscv_v{OperationType.to_string(prototype.op_desc.op_type)}_{operand_type_descriptor}_{intrinsic_type_tag}{suffix}"
+        operand_type_descriptor = f"_v{operand_type_descriptor}"
+    intrinsic_name = f"__riscv_v{OperationType.to_string(prototype.op_desc.op_type)}{operand_type_descriptor}_{intrinsic_type_tag}{suffix}"
     return intrinsic_name
 
 def generate_intrinsic_prototype(prototype: Operation) -> str:

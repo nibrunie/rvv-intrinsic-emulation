@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from rie_generator.zvkb_emulation import generate_zvkb_emulation
 from rie_generator.zvdot4a8i_emulation import generate_zvdot4a8i_emulation
+from rie_generator.zvzip_emulation import generate_zvzip_emulation
 from rie_generator.core import LMULType, EltType, TailPolicy, MaskPolicy
 
 # Maps CLI string values to enum values
@@ -49,7 +50,7 @@ def main():
     )
     parser.add_argument(
         '--extension', '-e',
-        choices=['zvkb', 'zvdot4a8i', 'all'],
+        choices=['zvkb', 'zvdot4a8i', 'zvzip', 'all'],
         default='all',
         help='Which extension to generate emulation for (default: all)'
     )
@@ -141,6 +142,18 @@ def main():
             prototypes=args.prototypes,
             definitions=args.definitions,
             lmul_filter=lmul_filter,
+            tail_policy_filter=tail_policy_filter,
+            mask_policy_filter=mask_policy_filter,
+        ))
+
+    if args.extension in ('zvzip', 'all'):
+        output.append("\n/* ===== Zvzip Emulation ===== */")
+        output.append(generate_zvzip_emulation(
+            attributes=args.attributes,
+            prototypes=args.prototypes,
+            definitions=args.definitions,
+            lmul_filter=lmul_filter,
+            elt_filter=elt_width_filter,
             tail_policy_filter=tail_policy_filter,
             mask_policy_filter=mask_policy_filter,
         ))

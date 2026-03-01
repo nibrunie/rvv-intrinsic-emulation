@@ -39,6 +39,7 @@ echo ""
 # ---------------------------------------------------------------
 run_gen "zvkb (all modes)"        -e zvkb
 run_gen "zvdot4a8i (all modes)"   -e zvdot4a8i
+run_gen "zvzip (all modes)"       -e zvzip
 run_gen "all extensions combined" -e all
 
 # ---------------------------------------------------------------
@@ -70,6 +71,23 @@ for tp in tu ta; do
     for mp in mu ma um; do
         run_gen "zvdot4a8i tail=$tp mask=$mp" \
             -e zvdot4a8i --tail-policy "$tp" --mask-policy "$mp"
+    done
+done
+
+# ---------------------------------------------------------------
+# 4. Zvzip — individual filter combinations
+# ---------------------------------------------------------------
+for lmul in m1 m2 m4; do
+    for ew in 8 16 32 64; do
+        run_gen "zvzip lmul=$lmul ew=$ew" \
+            -e zvzip --lmul "$lmul" --elt-width "$ew"
+    done
+done
+
+for tp in tu ta; do
+    for mp in mu ma um; do
+        run_gen "zvzip tail=$tp mask=$mp" \
+            -e zvzip --tail-policy "$tp" --mask-policy "$mp"
     done
 done
 
