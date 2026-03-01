@@ -70,6 +70,19 @@ class EltType(Enum):
         }
         return narrowing_map.get(elt_type)
 
+    @staticmethod
+    def from_size(signed: bool, size: int) -> 'EltType':
+        if size == 8:
+            return EltType.S8 if signed else EltType.U8
+        elif size == 16:
+            return EltType.S16 if signed else EltType.U16
+        elif size == 32:
+            return EltType.S32 if signed else EltType.U32
+        elif size == 64:
+            return EltType.S64 if signed else EltType.U64
+        else:
+            raise ValueError(f"Invalid signedness or element size: {signed}, {size}")
+
 class LMULType(Enum):
     MF8 = auto()
     MF4 = auto()
@@ -171,6 +184,7 @@ class OperationType(Enum):
     DIV = auto()
     REM = auto()
     NOT = auto()
+    # Comparison (for now, no distinction between signed and unsigned)
     EQ = auto()
     NE = auto()
     LT = auto()
@@ -216,6 +230,8 @@ class OperationType(Enum):
     MAX = auto()
     MINU = auto()
     MAXU = auto()
+
+    ABS = auto()
 
     VSETVLMAX = auto()
 
@@ -296,6 +312,8 @@ class OperationType(Enum):
             return "minu"
         elif op_type == OperationType.MAXU:
             return "maxu"
+        elif op_type == OperationType.ABS:
+            return "abs"
         elif op_type == OperationType.VSETVLMAX:
             return "vsetvlmax"
         elif op_type == OperationType.ZEXT_VF2:
@@ -320,6 +338,22 @@ class OperationType(Enum):
             return "slideup"
         elif op_type == OperationType.COMPRESS:
             return "compress"
+        elif op_type == OperationType.LT:
+            # assume signed integer comparison
+            # FIXME: support floating-point and unsigned (through operands format introspection ?)
+            return "mslt"
+        elif op_type == OperationType.LE:
+            # assume signed integer comparison
+            # FIXME: support floating-point and unsigned (through operands format introspection ?)
+            return "msle"
+        elif op_type == OperationType.GT:
+            # assume signed integer comparison
+            # FIXME: support floating-point and unsigned (through operands format introspection ?)
+            return "msgt"
+        elif op_type == OperationType.GE:
+            # assume signed integer comparison
+            # FIXME: support floating-point and unsigned (through operands format introspection ?)
+            return "msge"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -528,6 +562,12 @@ def generate_intrinsic_name(prototype: Operation) -> str:
         source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
         intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
         operand_type_descriptor = "_v"
+
+    # Some intrinsics (comparison), require the the source type to be displayed in the name
+    # suffix, but also require the full type descriptor to be used for the destination
+    if prototype.op_desc.op_type in [OperationType.LT, OperationType.LE, OperationType.GT, OperationType.GE]:
+        source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
+        intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
 
     if prototype.op_desc.op_type in [OperationType.ZEXT_VF2]:
         operand_type_descriptor = ""
