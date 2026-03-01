@@ -150,6 +150,22 @@ vdota4u(vs2, vs1, vd) =
 
 MIT — see [LICENSE](LICENSE).
 
+
+## Developper documentation
+
+### Generator API
+
+The tool relies on emulation generator functions following a predictable API to apply some common transformations.
+
+Any functions should accept the following parameters, in that order:
+1. operands (`vd` should be the last operand if it is required, it should be a keyword argument)
+2. any extra non-keyword arguments
+3. `vl` (vector length, keyword argument)
+4. `vm` (mask, keyword argument)
+5. `tail_policy` (tail policy, keyword argument)
+6. `mask_policy` (mask policy, keyword argument)
+7. any extra keyword arguments
+
 ## References
 
 - [RISC-V Vector Extension Specification](https://github.com/riscv/riscv-v-spec)

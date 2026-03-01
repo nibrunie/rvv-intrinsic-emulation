@@ -46,6 +46,29 @@ class EltType(Enum):
             return EltType.U64
         else:
             raise ValueError(f"Invalid element type: {elt_type}")
+    @staticmethod
+    def widen(elt_type: 'EltType') -> 'EltType':
+        widening_map = {
+            EltType.U8: EltType.U16,
+            EltType.S8: EltType.S16,
+            EltType.U16: EltType.U32,
+            EltType.S16: EltType.S32,
+            EltType.U32: EltType.U64,
+            EltType.S32: EltType.S64,
+        }
+        return widening_map.get(elt_type)
+
+    @staticmethod
+    def narrow(elt_type: 'EltType') -> 'EltType':
+        narrowing_map = {
+            EltType.U16: EltType.U8,
+            EltType.S16: EltType.S8,
+            EltType.U32: EltType.U16,
+            EltType.S32: EltType.S16,
+            EltType.U64: EltType.U32,
+            EltType.S64: EltType.S32,
+        }
+        return narrowing_map.get(elt_type)
 
 class LMULType(Enum):
     MF8 = auto()
@@ -121,6 +144,14 @@ class LMULType(Enum):
     def multiply(lmul_type: 'LMULType', factor: int) -> 'LMULType':
         """Multiply an LMUL type by a power-of-two factor."""
         return LMULType.from_value(LMULType.to_value(lmul_type) * factor)
+
+    @staticmethod
+    def is_valid_for_eew(elt_type: EltType, lmul_type: 'LMULType') -> bool:
+        """Check if an LMUL type is valid for a given EEW.
+            For example LMUL=1/8 is not valid for EEW > 8"""
+        eew = element_size(elt_type)
+        eew_bytes = eew // 8
+        return (LMULType.to_value(lmul_type) / eew_bytes) >= 1/8
 
 class OperationType(Enum):
     ROR = auto()
