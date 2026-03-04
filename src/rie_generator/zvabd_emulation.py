@@ -54,13 +54,94 @@ def vabs_emulation(vs2: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPol
         vs2,
         comp,
         vl,
+        vm=None, # vmerge does not support masking
+        tail_policy=tail_policy,
+        mask_policy=MaskPolicy.UNMASKED,
+        dst=vd,
+    )
+    if mask_policy in [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC]:
+        select = Operation(
+            vs2.node_format,
+            OperationDescriptor(OperationType.OR),
+            select,
+            Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, elt_type, None), 0),
+            vl,
+            vm=vm,
+            tail_policy=tail_policy,
+            mask_policy=mask_policy,
+            dst=vd,
+        )
+    return select
+
+def vabd_emulation(signed: bool, vs2: Node, vs1: Node, vl: Node, vm: Node, vd: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
+    elt_type = vs2.node_format.elt_type
+    # Performing the subtraction twice (vs2 - vs1) and (vs1 - vs2)
+    # Selecting the first result if vs2 >= vs1, else the second result
+    mask_type = NodeFormatDescriptor(NodeFormatType.MASK, elt_type, vs2.node_format.lmul_type)
+    comp = Operation(
+        mask_type,
+        OperationDescriptor(OperationType.GE if signed else OperationType.GEU),
+        vs2,
+        vs1,
+        vl,
+    )
+    vs2_minus_vs1 = Operation(
+        vs2.node_format,
+        OperationDescriptor(OperationType.SUB),
+        vs2,
+        vs1,
+        vl,
+    )
+    vs1_minus_vs2 = Operation(
+        vs2.node_format,
+        OperationDescriptor(OperationType.SUB),
+        vs1,
+        vs2,
+        vl,
+    )
+    select = Operation(
+        vs2.node_format,
+        OperationDescriptor(OperationType.MERGE),
+        vs2_minus_vs1,
+        vs1_minus_vs2,
+        comp,
+        vl,
+        vm=None, # vmerge does not support masking
+        tail_policy=tail_policy,
+        mask_policy=MaskPolicy.UNMASKED,
+        dst=vd,
+    )
+    if mask_policy in [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC]:
+        select = Operation(
+            vs2.node_format,
+            OperationDescriptor(OperationType.OR),
+            select,
+            Immediate(NodeFormatDescriptor(NodeFormatType.SCALAR, elt_type, None), 0),
+            vl,
+            vm=vm,
+            tail_policy=tail_policy,
+            mask_policy=mask_policy,
+            dst=vd,
+        )
+    return select
+
+
+def vwabda_emulation(signed: bool, vd: Node, vs2: Node, vs1: Node, vl: Node, vm: Node, tail_policy: TailPolicy, mask_policy: MaskPolicy) -> Operation:
+    vabd_result = vabd_emulation(signed, vs2, vs1, vl, vm, None, TailPolicy.UNDEFINED, MaskPolicy.UNMASKED)
+    accumulation = Operation(
+        vd.node_format,
+        OperationDescriptor(OperationType.WADDU),
+        vd,
+        vabd_result,
+        vl,
         vm=vm,
         tail_policy=tail_policy,
         mask_policy=mask_policy,
         dst=vd,
     )
-    return select
-
+    return accumulation
+    
+    
 
 # ---------------------------------------------------------------------------
 # Valid parameter spaces
@@ -100,6 +181,8 @@ def generate_zvabd_emulation(
     vl_type = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
     vl = Input(vl_type, 2, name="vl")
 
+    elen = 64 # FIXME: get from config
+
     output.append("#include <stdint.h>\n")
     output.append("#include <riscv_vector.h>\n")
     output.append("#include <stddef.h>\n")
@@ -118,6 +201,7 @@ def generate_zvabd_emulation(
         for lmul in lmuls:
             elt_type_unsigned = EltType.from_size(False, elt_size)
             elt_type_signed = EltType.from_size(True, elt_size)
+            wide_elt_type_unsigned = EltType.widen(elt_type_unsigned) if elt_size < elen else None
             vint_t = NodeFormatDescriptor(NodeFormatType.VECTOR, elt_type_signed, lmul)
             vuint_t = NodeFormatDescriptor(NodeFormatType.VECTOR, elt_type_unsigned, lmul)
             vbool_t = NodeFormatDescriptor(NodeFormatType.MASK, elt_type_unsigned, lmul)
@@ -131,6 +215,7 @@ def generate_zvabd_emulation(
             vm = Input(vbool_t, -2, name="vm")
             vdu = Input(vdu_fmt, -1, name="vd")
             vds = Input(vds_fmt, -1, name="vd")
+            
 
             for tail_policy in tail_policies:
                 for mask_policy in mask_policies:
@@ -149,10 +234,77 @@ def generate_zvabd_emulation(
                         dst=dst_signed,
                     )
                     vabs_v_emulation = vabs_emulation(vs2_signed, vl, mask, dst_signed, tail_policy, mask_policy)
-
+                    
+                    # partial list before conditionally adding vwabda[u] if SEW < ELEN
                     zvabd_insns = [
                         (vabs_v_prototype, vabs_v_emulation),
                     ]
+
+                    if elt_size in [8, 16]: # vabd[u] is reserved when SEW != 8 or 16
+                        vabd_vv_prototype = Operation(
+                            vds_fmt,
+                            OperationDescriptor(OperationType.ABD),
+                            vs2_signed,
+                            vs1_signed,
+                            vl,
+                            vm=mask,
+                            tail_policy=tail_policy,
+                            mask_policy=mask_policy,
+                            dst=dst_signed,
+                        )
+                        vabd_vv_emulation = vabd_emulation(True, vs2_signed, vs1_signed, vl, mask, dst_signed, tail_policy, mask_policy)
+
+                        vabdu_vv_prototype = Operation(
+                            vdu_fmt,
+                            OperationDescriptor(OperationType.ABDU),
+                            vs2_unsigned,
+                            vs1_unsigned,
+                            vl,
+                            vm=mask,
+                            tail_policy=tail_policy,
+                            mask_policy=mask_policy,
+                            dst=dst_unsigned,
+                        )
+                        vabdu_vv_emulation = vabd_emulation(False, vs2_unsigned, vs1_unsigned, vl, mask, dst_unsigned, tail_policy, mask_policy)
+                        zvabd_insns.append((vabd_vv_prototype, vabd_vv_emulation))
+                        zvabd_insns.append((vabdu_vv_prototype, vabdu_vv_emulation))
+
+
+                    if wide_elt_type_unsigned is not None and lmul != LMULType.M8 and element_size in [8, 16]: 
+                        wide_lmul = LMULType.multiply(lmul, 2)
+                        wide_vuint_t = NodeFormatDescriptor(NodeFormatType.VECTOR, wide_elt_type_unsigned, wide_lmul)
+                        wide_vdu = Input(wide_vuint_t, -1, name="vd")
+
+                        vwabda_vv_prototype = Operation(
+                            wide_vuint_t,
+                            OperationDescriptor(OperationType.WABDA),
+                            wide_vdu,
+                            vs2_signed,
+                            vs1_signed,
+                            vl,
+                            vm=mask,
+                            tail_policy=tail_policy,
+                            mask_policy=mask_policy,
+                            dst=wide_vdu,
+                        )
+                        vwabda_vv_emulation = vwabda_emulation(True, wide_vdu, vs2_signed, vs1_signed, vl, mask, tail_policy, mask_policy)
+
+                        vwabdau_vv_prototype = Operation(
+                            wide_vuint_t,
+                            OperationDescriptor(OperationType.WABDAU),
+                            wide_vdu,
+                            vs2_unsigned,
+                            vs1_unsigned,
+                            vl,
+                            vm=mask,
+                            tail_policy=tail_policy,
+                            mask_policy=mask_policy,
+                            dst=wide_vdu,
+                        )
+                        vwabdau_vv_emulation = vwabda_emulation(False, wide_vdu, vs2_unsigned, vs1_unsigned, vl, mask, tail_policy, mask_policy)
+
+                        zvabd_insns.append((vwabda_vv_prototype, vwabda_vv_emulation))
+                        zvabd_insns.append((vwabdau_vv_prototype, vwabdau_vv_emulation))
 
                     if prototypes:
                         output.append("// prototypes")

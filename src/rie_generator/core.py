@@ -191,6 +191,7 @@ class OperationType(Enum):
     LE = auto()
     GT = auto()
     GE = auto()
+    GEU = auto()
     BREV8 = auto()
     REV8 = auto()
     WMACC = auto()
@@ -206,6 +207,7 @@ class OperationType(Enum):
     WMULSU = auto()
     WADD = auto()
     WADDU = auto()
+    WSUB = auto()
     ZEXT_VF2 = auto()
     ZIP = auto()
     UNZIP_EVEN = auto()
@@ -232,6 +234,10 @@ class OperationType(Enum):
     MAXU = auto()
 
     ABS = auto()
+    ABD = auto()
+    ABDU = auto()
+    WABDA = auto()
+    WABDAU = auto()
 
     VSETVLMAX = auto()
 
@@ -298,6 +304,8 @@ class OperationType(Enum):
             return "wadd"
         elif op_type == OperationType.WADDU:
             return "waddu"
+        elif op_type == OperationType.WSUB:
+            return "wsub"
         elif op_type == OperationType.REINTERPRET:
             return "reinterpret"
         elif op_type == OperationType.CREATE:
@@ -314,6 +322,14 @@ class OperationType(Enum):
             return "maxu"
         elif op_type == OperationType.ABS:
             return "abs"
+        elif op_type == OperationType.ABD:
+            return "abd"
+        elif op_type == OperationType.ABDU:
+            return "abdu"
+        elif op_type == OperationType.WABDA:
+            return "wabda"
+        elif op_type == OperationType.WABDAU:
+            return "wabdau"
         elif op_type == OperationType.VSETVLMAX:
             return "vsetvlmax"
         elif op_type == OperationType.ZEXT_VF2:
@@ -354,6 +370,9 @@ class OperationType(Enum):
             # assume signed integer comparison
             # FIXME: support floating-point and unsigned (through operands format introspection ?)
             return "msge"
+        elif op_type == OperationType.GEU:
+            # assume unsigned integer comparison
+            return "msgeu"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -397,12 +416,18 @@ class Immediate(Node):
         self.value = value
         self.node_type = NodeType.IMMEDIATE
 
+    def __str__(self):
+        return f"Immediate(node_format={str(self.node_format)}, value={self.value})"
+
 class Input(Node):
     def __init__(self, node_format: NodeFormatDescriptor, index: int, name: str = None  ):
         self.node_format = node_format
         self.index = index
         self.name = name
         self.node_type = NodeType.INPUT
+
+    def __str__(self):
+        return f"Input(node_format={str(self.node_format)}, index={self.index}, name={self.name})"
 
 class TailPolicy(Enum):
     AGNOSTIC = auto()
@@ -545,7 +570,10 @@ def generate_intrinsic_name(prototype: Operation) -> str:
         if arg.node_format.node_format_type == NodeFormatType.VECTOR:
             # w for wide, v for vector
             # w is not used for some single operand operations (e.g. reinterpret)
-            if len(prototype.args) > 1 and element_size(arg.node_format.elt_type) > element_size(prototype.node_format.elt_type):
+            dst_fmt_size = element_size(prototype.node_format.elt_type)
+            src_fmt_size = element_size(arg.node_format.elt_type)
+            if (len(prototype.args) > 1 and src_fmt_size > dst_fmt_size) or \
+                (prototype.op_desc.op_type in [OperationType.WADD, OperationType.WSUB, OperationType.WADDU] and src_fmt_size == dst_fmt_size) :
                 operand_type_descriptor += "w"
             else: # element_size(args.node_format.elt_type) == element_size(prototype.node_format.elt_type):
                 operand_type_descriptor += "v"
@@ -565,7 +593,7 @@ def generate_intrinsic_name(prototype: Operation) -> str:
 
     # Some intrinsics (comparison), require the the source type to be displayed in the name
     # suffix, but also require the full type descriptor to be used for the destination
-    if prototype.op_desc.op_type in [OperationType.LT, OperationType.LE, OperationType.GT, OperationType.GE]:
+    if prototype.op_desc.op_type in [OperationType.LT, OperationType.LE, OperationType.GT, OperationType.GE, OperationType.GEU]:
         source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
         intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
 
@@ -623,6 +651,8 @@ class CodeObject:
 
 def generate_operation(code: CodeObject, op: Node, memoization_map: dict[str]) -> str:
     if op.node_type == NodeType.INPUT:
+        if op not in memoization_map:
+            raise ValueError(f"Input node {str(op)} not found in memoization map")
         return memoization_map[op]
     elif op.node_type == NodeType.IMMEDIATE:
         return f"{op.value}"
@@ -703,6 +733,8 @@ def generate_scalar_operation(code: CodeObject, op: Node, memoization_map: dict[
     elif op.op_desc.op_type == OperationType.GT:
         expression = f"{arg_list[0]} > {arg_list[1]}"
     elif op.op_desc.op_type == OperationType.GE:
+        expression = f"{arg_list[0]} >= {arg_list[1]}"
+    elif op.op_desc.op_type == OperationType.GEU:
         expression = f"{arg_list[0]} >= {arg_list[1]}"
     elif op.op_desc.op_type == OperationType.MIN:
         lhs = arg_list[0]
