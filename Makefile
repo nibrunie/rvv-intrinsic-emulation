@@ -3,7 +3,7 @@
 
 # Configurable variables
 PYTHON    ?= python3
-CC         = riscv64-elf-gcc
+CC        ?= riscv64-elf-gcc
 MARCH     ?= rv64gcv
 MABI      ?= lp64d
 CFLAGS    ?= -O2 -Wall -Wextra -Werror -ffreestanding
