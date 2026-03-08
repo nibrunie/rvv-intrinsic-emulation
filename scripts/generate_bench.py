@@ -265,16 +265,81 @@ typedef struct {
 """
 
 C_MAIN = """\
-/* ---------- empty-loop calibration ---------- */
-/* Measures the overhead of the inner loop itself (volatile vl_array read). */
-static void __attribute__((noinline)) bench_empty_loop(size_t vl, int inner_iters,
-                                                       int perf_fd, long long *out_count) {
+/* ---------- empty-loop calibration per LMUL ---------- */
+/* Each measures the overhead of the inner loop (volatile vl_array read +
+   dummy volatile vector result store) for a given LMUL width.
+   LMUL index: 0=m1, 1=m2, 2=m4, 3=m8 */
+
+#define NUM_LMULS 4
+
+static void __attribute__((noinline)) bench_empty_loop_m1(size_t vl, int inner_iters,
+                                                          int perf_fd, long long *out_count) {
+    vuint8m1_t dummy = __riscv_vle8_v_u8m1((const uint8_t*)rand_buf, vl);
     perf_start(perf_fd);
     for (int _i = 0; _i < inner_iters; _i++) {
         size_t _vl = vl_array[_i & (VL_ARRAY_SIZE - 1)];
         (void)_vl;
+        vuint8m1_t volatile result = dummy;
+        (void)result;
     }
     *out_count = perf_stop(perf_fd) / inner_iters;
+}
+
+static void __attribute__((noinline)) bench_empty_loop_m2(size_t vl, int inner_iters,
+                                                          int perf_fd, long long *out_count) {
+    vuint8m2_t dummy = __riscv_vle8_v_u8m2((const uint8_t*)rand_buf, vl);
+    perf_start(perf_fd);
+    for (int _i = 0; _i < inner_iters; _i++) {
+        size_t _vl = vl_array[_i & (VL_ARRAY_SIZE - 1)];
+        (void)_vl;
+        vuint8m2_t volatile result = dummy;
+        (void)result;
+    }
+    *out_count = perf_stop(perf_fd) / inner_iters;
+}
+
+static void __attribute__((noinline)) bench_empty_loop_m4(size_t vl, int inner_iters,
+                                                          int perf_fd, long long *out_count) {
+    vuint8m4_t dummy = __riscv_vle8_v_u8m4((const uint8_t*)rand_buf, vl);
+    perf_start(perf_fd);
+    for (int _i = 0; _i < inner_iters; _i++) {
+        size_t _vl = vl_array[_i & (VL_ARRAY_SIZE - 1)];
+        (void)_vl;
+        vuint8m4_t volatile result = dummy;
+        (void)result;
+    }
+    *out_count = perf_stop(perf_fd) / inner_iters;
+}
+
+static void __attribute__((noinline)) bench_empty_loop_m8(size_t vl, int inner_iters,
+                                                          int perf_fd, long long *out_count) {
+    vuint8m8_t dummy = __riscv_vle8_v_u8m8((const uint8_t*)rand_buf, vl);
+    perf_start(perf_fd);
+    for (int _i = 0; _i < inner_iters; _i++) {
+        size_t _vl = vl_array[_i & (VL_ARRAY_SIZE - 1)];
+        (void)_vl;
+        vuint8m8_t volatile result = dummy;
+        (void)result;
+    }
+    *out_count = perf_stop(perf_fd) / inner_iters;
+}
+
+typedef void (*empty_loop_fn_t)(size_t, int, int, long long *);
+static const struct { int lmul; empty_loop_fn_t fn; size_t (*setvlmax)(void); } empty_loop_table[NUM_LMULS] = {
+    { 1, bench_empty_loop_m1, __riscv_vsetvlmax_e8m1 },
+    { 2, bench_empty_loop_m2, __riscv_vsetvlmax_e8m2 },
+    { 4, bench_empty_loop_m4, __riscv_vsetvlmax_e8m4 },
+    { 8, bench_empty_loop_m8, __riscv_vsetvlmax_e8m8 },
+};
+
+static int lmul_to_index(int lmul) {
+    switch (lmul) {
+        case 1: return 0;
+        case 2: return 1;
+        case 4: return 2;
+        case 8: return 3;
+        default: return 0;
+    }
 }
 
 /* ---------- main ---------- */
@@ -310,23 +375,23 @@ int main(int argc, char *argv[]) {
 
     int perf_fd = setup_perf_counter(perf_config);
     int num_entries = sizeof(bench_entries) / sizeof(bench_entries[0]);
-    long long loop_overhead;
 
-    /* --- Calibrate empty loop overhead --- */
-    {
-        size_t cal_vl = __riscv_vsetvlmax_e8m1();
+    /* --- Calibrate empty loop overhead per LMUL --- */
+    long long loop_overhead[NUM_LMULS];
+    for (int li = 0; li < NUM_LMULS; li++) {
+        size_t cal_vl = empty_loop_table[li].setvlmax();
         long long overhead_total = 0;
         fill_vl_array(cal_vl);
         for (int it = 0; it < num_outer; it++) {
             long long val;
-            bench_empty_loop(cal_vl, num_inner, perf_fd, &val);
+            empty_loop_table[li].fn(cal_vl, num_inner, perf_fd, &val);
             overhead_total += val;
         }
-        /* Use average as the per-iteration overhead */
-        loop_overhead = overhead_total / num_outer;
-        printf("# empty_loop overhead per iteration: %lld %s\\n", loop_overhead, metric_name);
-        printf("# (subtracted from all measurements below)\\n");
+        loop_overhead[li] = overhead_total / num_outer;
+        printf("# empty_loop overhead m%d: %lld %s/iter\\n",
+               empty_loop_table[li].lmul, loop_overhead[li], metric_name);
     }
+    printf("# (per-LMUL overhead subtracted from all measurements below)\\n");
 
     printf("intrinsic_name, inner_iters, min_%s, max_%s, avg_%s\\n",
            metric_name, metric_name, metric_name);
@@ -336,6 +401,7 @@ int main(int argc, char *argv[]) {
         long long min_val = __LONG_LONG_MAX__;
         long long max_val = 0;
         long long total = 0;
+        long long overhead = loop_overhead[lmul_to_index(entry->lmul)];
 
         /* Determine vl = vlmax for this entry's EW/LMUL */
         size_t vl;
@@ -363,7 +429,7 @@ int main(int argc, char *argv[]) {
             long long val;
             fill_vl_array(vl);
             entry->fn(vl, num_inner, perf_fd, &val);
-            long long adjusted = val - loop_overhead;
+            long long adjusted = val - overhead;
             if (adjusted < 0) adjusted = 0;
             if (adjusted < min_val) min_val = adjusted;
             if (adjusted > max_val) max_val = adjusted;
