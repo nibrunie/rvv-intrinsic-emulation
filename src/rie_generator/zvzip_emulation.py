@@ -524,8 +524,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--attributes", nargs="+", default=[], help="Attributes to add to the generated code")
-    parser.add_argument("-p", "--prototypes", default=False, action="store", type=bool, help="generate prototypes")
-    parser.add_argument("-d", "--definitions", default=True, action="store", type=bool, help="generate definitions")
+    parser.add_argument("-p", "--prototypes", default=False, action="store_true", help="generate prototypes")
+    parser.add_argument("--no-definitions", default=True, action="store_false", help="do not generate definitions")
     args = parser.parse_args()
 
-    main(attributes=args.attributes, prototypes=args.prototypes, definitions=args.definitions)
+    main(attributes=args.attributes, prototypes=args.prototypes, definitions=not args.no_definitions)

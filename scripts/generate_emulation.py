@@ -75,11 +75,10 @@ def main():
         help='Generate prototypes (default: False)'
     )
     parser.add_argument(
-        '--definitions', '-d',
-        type=bool,
-        default=True,
-        action="store",
-        help='Generate definitions (default: True)'
+        '--no-definitions', '-d',
+        default=False,
+        action="store_true",
+        help='Do not generate definitions (default: generate definitions)'
     )
     parser.add_argument(
         '--lmul',
@@ -129,7 +128,7 @@ def main():
         output.append(generate_zvkb_emulation(
             attributes=args.attributes,
             prototypes=args.prototypes,
-            definitions=args.definitions,
+            definitions=not args.no_definitions,
             lmul_filter=lmul_filter,
             elt_filter=elt_width_filter,
             tail_policy_filter=tail_policy_filter,
@@ -141,7 +140,7 @@ def main():
         output.append(generate_zvdot4a8i_emulation(
             attributes=args.attributes,
             prototypes=args.prototypes,
-            definitions=args.definitions,
+            definitions=not args.no_definitions,
             lmul_filter=lmul_filter,
             tail_policy_filter=tail_policy_filter,
             mask_policy_filter=mask_policy_filter,
@@ -152,7 +151,7 @@ def main():
         output.append(generate_zvzip_emulation(
             attributes=args.attributes,
             prototypes=args.prototypes,
-            definitions=args.definitions,
+            definitions=not args.no_definitions,
             lmul_filter=lmul_filter,
             elt_filter=elt_width_filter,
             tail_policy_filter=tail_policy_filter,
@@ -164,7 +163,7 @@ def main():
         output.append(generate_zvabd_emulation(
             attributes=args.attributes,
             prototypes=args.prototypes,
-            definitions=args.definitions,
+            definitions=not args.no_definitions,
             lmul_filter=lmul_filter,
             elt_filter=elt_width_filter,
             tail_policy_filter=tail_policy_filter,
