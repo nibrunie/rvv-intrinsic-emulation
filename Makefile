@@ -20,7 +20,8 @@ ZVZIP_GEN_FLAGS   = -e zvzip --lmul m1 --tail-policy ta --mask-policy um
 
 # Benchmark settings
 BENCH_METRIC ?= cycles
-BENCH_ITERS  ?= 100
+BENCH_ITERS  ?= 10
+BENCH_INNER  ?= 1000
 
 # --- Targets ---
 
@@ -77,7 +78,7 @@ $(BUILD_DIR)/bench_all: tests/src/bench_all.c $(GEN_DIR)/emulation_all.h | $(BUI
 
 # Step 3: Run the benchmark
 bench-run: $(BUILD_DIR)/bench_all
-	$(BUILD_DIR)/bench_all -m $(BENCH_METRIC) -n $(BENCH_ITERS)
+	$(BUILD_DIR)/bench_all -m $(BENCH_METRIC) -n $(BENCH_ITERS) -i $(BENCH_INNER)
 
 # Shorthand: generate + build + run
 bench: bench-generate bench-build bench-run
