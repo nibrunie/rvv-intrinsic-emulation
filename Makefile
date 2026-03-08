@@ -13,6 +13,8 @@ BENCH_SCRIPT = scripts/generate_bench.py
 GEN_DIR    = tests/generated
 BUILD_DIR  = tests/build
 
+ATTRIBUTES ?= "static __attribute__((noinline)) "
+
 # Generation filters for tests (keep small for fast compile)
 ZVKB_GEN_FLAGS    = -e zvkb --lmul m1 --elt-width 32 --tail-policy tu --mask-policy um
 ZVDOT_GEN_FLAGS   = -e zvdot4a8i --lmul m1 --tail-policy tu --mask-policy um
@@ -62,10 +64,10 @@ $(BUILD_DIR)/test_zvzip.o: tests/src/test_zvzip.c $(GEN_DIR)/zvzip_emu.h | $(BUI
 bench-generate: $(GEN_DIR)/emulation_all.h tests/src/bench_all.c
 
 $(GEN_DIR)/emulation_all.h: $(GEN_SCRIPT) src/rie_generator/*.py | $(GEN_DIR)
-	$(PYTHON) $(GEN_SCRIPT) -e all --prototypes=True  -o $@
+	$(PYTHON) $(GEN_SCRIPT) -e all --attributes $(ATTRIBUTES)  -o $@
 
 $(GEN_DIR)/emulation_decl_all.h: $(GEN_SCRIPT) src/rie_generator/*.py | $(GEN_DIR)
-	$(PYTHON) $(GEN_SCRIPT) -e all --prototypes=True --no-definitions -o $@
+	$(PYTHON) $(GEN_SCRIPT) -e all  --attributes $(ATTRIBUTES) --prototypes=True --no-definitions -o $@
 
 tests/src/bench_all.c: $(BENCH_SCRIPT) $(GEN_DIR)/emulation_decl_all.h
 	$(PYTHON) $(BENCH_SCRIPT) $(GEN_DIR)/emulation_decl_all.h -o $@
