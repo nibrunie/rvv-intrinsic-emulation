@@ -389,7 +389,7 @@ def gen_wrapper_function(proto: Prototype, idx: int) -> str:
         lines.append(f"        {proto.name}({call_args});")
 
     lines.append("    }")
-    lines.append("    *out_count = perf_stop(perf_fd);")
+    lines.append("    *out_count = perf_stop(perf_fd) / inner_iters;")
 
     lines.append("}")
     lines.append("")
