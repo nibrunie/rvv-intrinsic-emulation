@@ -24,6 +24,7 @@ ZVZIP_GEN_FLAGS   = -e zvzip --lmul m1 --tail-policy ta --mask-policy um
 BENCH_METRIC ?= cycles
 BENCH_ITERS  ?= 10
 BENCH_INNER  ?= 1000
+BENCH_EXTS   ?= all
 
 # --- Targets ---
 
@@ -64,10 +65,10 @@ $(BUILD_DIR)/test_zvzip.o: tests/src/test_zvzip.c $(GEN_DIR)/zvzip_emu.h | $(BUI
 bench-generate: $(GEN_DIR)/emulation_all.h tests/src/bench_all.c
 
 $(GEN_DIR)/emulation_all.h: $(GEN_SCRIPT) src/rie_generator/*.py | $(GEN_DIR)
-	$(PYTHON) $(GEN_SCRIPT) -e all --attributes $(ATTRIBUTES)  -o $@
+	$(PYTHON) $(GEN_SCRIPT) -e $(BENCH_EXTS) --attributes $(ATTRIBUTES)  -o $@
 
 $(GEN_DIR)/emulation_decl_all.h: $(GEN_SCRIPT) src/rie_generator/*.py | $(GEN_DIR)
-	$(PYTHON) $(GEN_SCRIPT) -e all  --attributes $(ATTRIBUTES) --prototypes=True --no-definitions -o $@
+	$(PYTHON) $(GEN_SCRIPT) -e $(BENCH_EXTS) --attributes $(ATTRIBUTES) --prototypes=True --no-definitions -o $@
 
 tests/src/bench_all.c: $(BENCH_SCRIPT) $(GEN_DIR)/emulation_decl_all.h
 	$(PYTHON) $(BENCH_SCRIPT) $(GEN_DIR)/emulation_decl_all.h -o $@
