@@ -325,11 +325,18 @@ static void __attribute__((noinline)) bench_empty_loop_m8(size_t vl, int inner_i
 }
 
 typedef void (*empty_loop_fn_t)(size_t, int, int, long long *);
+
+/* Wrappers for vsetvlmax intrinsics (intrinsics cannot be used as function pointers) */
+static size_t setvlmax_e8m1(void) { return __riscv_vsetvlmax_e8m1(); }
+static size_t setvlmax_e8m2(void) { return __riscv_vsetvlmax_e8m2(); }
+static size_t setvlmax_e8m4(void) { return __riscv_vsetvlmax_e8m4(); }
+static size_t setvlmax_e8m8(void) { return __riscv_vsetvlmax_e8m8(); }
+
 static const struct { int lmul; empty_loop_fn_t fn; size_t (*setvlmax)(void); } empty_loop_table[NUM_LMULS] = {
-    { 1, bench_empty_loop_m1, __riscv_vsetvlmax_e8m1 },
-    { 2, bench_empty_loop_m2, __riscv_vsetvlmax_e8m2 },
-    { 4, bench_empty_loop_m4, __riscv_vsetvlmax_e8m4 },
-    { 8, bench_empty_loop_m8, __riscv_vsetvlmax_e8m8 },
+    { 1, bench_empty_loop_m1, setvlmax_e8m1 },
+    { 2, bench_empty_loop_m2, setvlmax_e8m2 },
+    { 4, bench_empty_loop_m4, setvlmax_e8m4 },
+    { 8, bench_empty_loop_m8, setvlmax_e8m8 },
 };
 
 static int lmul_to_index(int lmul) {
