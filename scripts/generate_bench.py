@@ -235,12 +235,23 @@ static void fill_random(void) {
         rand_buf[i] = (uint8_t)rand();
 }
 
+/* ---------- vl array for inner loop ---------- */
+/* Pre-filled with vlmax; read via volatile to prevent hoisting of vsetvl. */
+#define VL_ARRAY_SIZE 64
+static volatile size_t vl_array[VL_ARRAY_SIZE];
+
+static void fill_vl_array(size_t vlmax) {
+    for (int i = 0; i < VL_ARRAY_SIZE; i++)
+        vl_array[i] = vlmax;
+}
+
 /* ---------- benchmark entry ---------- */
 /*
  * Each benchmark wrapper:
  *   1. Loads all input data from rand_buf (outside measurement)
- *   2. Runs a tight inner loop of inner_iters calls (inside measurement)
- *   3. Returns the measured perf counter value via *out_count
+ *   2. Runs a tight inner loop of inner_iters calls (inside measurement),
+ *      reading vl from vl_array at each iteration
+ *   3. Returns the measured perf counter value (per iteration) via *out_count
  */
 typedef void (*bench_fn_t)(size_t vl, int inner_iters, int perf_fd, long long *out_count);
 
@@ -322,6 +333,7 @@ int main(int argc, char *argv[]) {
 
         for (int it = 0; it < num_outer; it++) {
             long long val;
+            fill_vl_array(vl);
             entry->fn(vl, num_inner, perf_fd, &val);
             if (val < min_val) min_val = val;
             if (val > max_val) max_val = val;
@@ -378,15 +390,19 @@ def gen_wrapper_function(proto: Prototype, idx: int) -> str:
     call_args = ", ".join(arg_names)
     ret_p = classify_type(proto.ret_type)
 
-    # Step 2: Measured inner loop
+    # Step 2: Measured inner loop — read vl from volatile array each iteration
     lines.append("    perf_start(perf_fd);")
     lines.append("    for (int _i = 0; _i < inner_iters; _i++) {")
+    lines.append("        size_t _vl = vl_array[_i & (VL_ARRAY_SIZE - 1)];")
+
+    # Replace 'vl' with '_vl' in the call args
+    call_args_inner = call_args.replace("vl", "_vl") if "vl" in arg_names else call_args
 
     if ret_p.is_vector or ret_p.is_mask:
-        lines.append(f"        {proto.ret_type} volatile result = {proto.name}({call_args});")
+        lines.append(f"        {proto.ret_type} volatile result = {proto.name}({call_args_inner});")
         lines.append(f"        (void)result;")
     else:
-        lines.append(f"        {proto.name}({call_args});")
+        lines.append(f"        {proto.name}({call_args_inner});")
 
     lines.append("    }")
     lines.append("    *out_count = perf_stop(perf_fd) / inner_iters;")
