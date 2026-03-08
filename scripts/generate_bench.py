@@ -265,6 +265,17 @@ typedef struct {
 """
 
 C_MAIN = """\
+/* ---------- empty-loop calibration ---------- */
+/* Measures the overhead of the inner loop itself (volatile vl_array read). */
+static void __attribute__((noinline)) bench_empty_loop(size_t vl, int inner_iters,
+                                                       int perf_fd, long long *out_count) {
+    perf_start(perf_fd);
+    for (int _i = 0; _i < inner_iters; _i++) {
+        size_t _vl = vl_array[_i & (VL_ARRAY_SIZE - 1)];
+        (void)_vl;
+    }
+    *out_count = perf_stop(perf_fd) / inner_iters;
+}
 
 /* ---------- main ---------- */
 
@@ -299,6 +310,23 @@ int main(int argc, char *argv[]) {
 
     int perf_fd = setup_perf_counter(perf_config);
     int num_entries = sizeof(bench_entries) / sizeof(bench_entries[0]);
+    long long loop_overhead;
+
+    /* --- Calibrate empty loop overhead --- */
+    {
+        size_t cal_vl = __riscv_vsetvlmax_e8m1();
+        long long overhead_total = 0;
+        fill_vl_array(cal_vl);
+        for (int it = 0; it < num_outer; it++) {
+            long long val;
+            bench_empty_loop(cal_vl, num_inner, perf_fd, &val);
+            overhead_total += val;
+        }
+        /* Use average as the per-iteration overhead */
+        loop_overhead = overhead_total / num_outer;
+        printf("# empty_loop overhead per iteration: %lld %s\\n", loop_overhead, metric_name);
+        printf("# (subtracted from all measurements below)\\n");
+    }
 
     printf("intrinsic_name, inner_iters, min_%s, max_%s, avg_%s\\n",
            metric_name, metric_name, metric_name);
@@ -335,9 +363,11 @@ int main(int argc, char *argv[]) {
             long long val;
             fill_vl_array(vl);
             entry->fn(vl, num_inner, perf_fd, &val);
-            if (val < min_val) min_val = val;
-            if (val > max_val) max_val = val;
-            total += val;
+            long long adjusted = val - loop_overhead;
+            if (adjusted < 0) adjusted = 0;
+            if (adjusted < min_val) min_val = adjusted;
+            if (adjusted > max_val) max_val = adjusted;
+            total += adjusted;
         }
 
         double avg = (double)total / num_outer;
