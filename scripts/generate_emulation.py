@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from rie_generator.zvkb_emulation import generate_zvkb_emulation
 from rie_generator.zvdot4a8i_emulation import generate_zvdot4a8i_emulation
 from rie_generator.zvzip_emulation import generate_zvzip_emulation
+from rie_generator.zvabd_emulation import generate_zvabd_emulation
 from rie_generator.core import LMULType, EltType, TailPolicy, MaskPolicy
 
 # Maps CLI string values to enum values
@@ -50,7 +51,7 @@ def main():
     )
     parser.add_argument(
         '--extension', '-e',
-        choices=['zvkb', 'zvdot4a8i', 'zvzip', 'all'],
+        choices=['zvkb', 'zvdot4a8i', 'zvzip', 'zvabd', 'all'],
         default='all',
         help='Which extension to generate emulation for (default: all)'
     )
@@ -74,11 +75,10 @@ def main():
         help='Generate prototypes (default: False)'
     )
     parser.add_argument(
-        '--definitions', '-d',
-        type=bool,
-        default=True,
-        action="store",
-        help='Generate definitions (default: True)'
+        '--no-definitions', '-d',
+        default=False,
+        action="store_true",
+        help='Do not generate definitions (default: generate definitions)'
     )
     parser.add_argument(
         '--lmul',
@@ -128,7 +128,7 @@ def main():
         output.append(generate_zvkb_emulation(
             attributes=args.attributes,
             prototypes=args.prototypes,
-            definitions=args.definitions,
+            definitions=not args.no_definitions,
             lmul_filter=lmul_filter,
             elt_filter=elt_width_filter,
             tail_policy_filter=tail_policy_filter,
@@ -140,7 +140,7 @@ def main():
         output.append(generate_zvdot4a8i_emulation(
             attributes=args.attributes,
             prototypes=args.prototypes,
-            definitions=args.definitions,
+            definitions=not args.no_definitions,
             lmul_filter=lmul_filter,
             tail_policy_filter=tail_policy_filter,
             mask_policy_filter=mask_policy_filter,
@@ -151,7 +151,19 @@ def main():
         output.append(generate_zvzip_emulation(
             attributes=args.attributes,
             prototypes=args.prototypes,
-            definitions=args.definitions,
+            definitions=not args.no_definitions,
+            lmul_filter=lmul_filter,
+            elt_filter=elt_width_filter,
+            tail_policy_filter=tail_policy_filter,
+            mask_policy_filter=mask_policy_filter,
+        ))
+
+    if args.extension in ('zvabd', 'all'):
+        output.append("\n/* ===== Zvabd Emulation ===== */")
+        output.append(generate_zvabd_emulation(
+            attributes=args.attributes,
+            prototypes=args.prototypes,
+            definitions=not args.no_definitions,
             lmul_filter=lmul_filter,
             elt_filter=elt_width_filter,
             tail_policy_filter=tail_policy_filter,

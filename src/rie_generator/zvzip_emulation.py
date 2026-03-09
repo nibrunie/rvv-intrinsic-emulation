@@ -412,10 +412,12 @@ def generate_zvzip_emulation(
             wide_vm = Input(wide_vbool_t, -2, name="vm")
             std_vm = Input(std_vbool_t, -2, name="vm")
             vd = Input(vuint_t, -1, name="vd")
+            vd_wide = Input(vd_fmt, -1, name="vd")
 
             for tail_policy in tail_policies:
                 for mask_policy in mask_policies:
                     dst = vd if tail_policy == TailPolicy.UNDISTURBED or mask_policy == MaskPolicy.UNDISTURBED else None
+                    dst_wide = vd_wide if tail_policy == TailPolicy.UNDISTURBED or mask_policy == MaskPolicy.UNDISTURBED else None
                     wide_mask = wide_vm if mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED) else None
                     std_mask = std_vm if mask_policy not in (MaskPolicy.UNDEFINED, MaskPolicy.UNMASKED) else None
 
@@ -431,9 +433,9 @@ def generate_zvzip_emulation(
                         vm=wide_mask,
                         tail_policy=tail_policy,
                         mask_policy=mask_policy,
-                        dst=dst,
+                        dst=dst_wide,
                     )
-                    vzip_vv_emulation = vzip_emulation(vs2, vs1, vl, wide_mask, dst, tail_policy, mask_policy)
+                    vzip_vv_emulation = vzip_emulation(vs2, vs1, vl, wide_mask, dst_wide, tail_policy, mask_policy)
 
                     # --- vunzip.even / vunzip.odd: deinterleave widened vector ---
                     # input is the widened (interleaved) vector, output is base format
@@ -524,8 +526,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--attributes", nargs="+", default=[], help="Attributes to add to the generated code")
-    parser.add_argument("-p", "--prototypes", default=False, action="store", type=bool, help="generate prototypes")
-    parser.add_argument("-d", "--definitions", default=True, action="store", type=bool, help="generate definitions")
+    parser.add_argument("-p", "--prototypes", default=False, action="store_true", help="generate prototypes")
+    parser.add_argument("--no-definitions", default=True, action="store_false", help="do not generate definitions")
     args = parser.parse_args()
 
-    main(attributes=args.attributes, prototypes=args.prototypes, definitions=args.definitions)
+    main(attributes=args.attributes, prototypes=args.prototypes, definitions=not args.no_definitions)
