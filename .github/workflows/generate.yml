@@ -26,3 +26,56 @@ jobs:
 
       - name: Run generation smoke tests
         run: bash scripts/ci_generate_all.sh
+
+  build-intrinsics:
+    name: Build all intrinsics with clang (RISC-V)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install package
+        run: pip install -e ".[dev]"
+
+      - name: Install clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Build all generated intrinsics (compile to assembly)
+        run: |
+          python3 scripts/generate_emulation.py -e all \
+            | clang -x c -ffreestanding -O3 -S --target=riscv64 -march=rv64gcv -mabi=lp64d - -o /dev/null
+
+  build-intrinsics-gcc:
+    name: Build all intrinsics with GCC (non-required)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install package
+        run: pip install -e ".[dev]"
+
+      - name: Install RISC-V bare-metal GCC toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-riscv64-unknown-elf
+
+      - name: Build all generated intrinsics (compile to assembly)
+        run: |
+          python3 scripts/generate_emulation.py -e all \
+            | riscv64-unknown-elf-gcc -x c -ffreestanding -O3 -S -march=rv64gcv -mabi=lp64d - -o /dev/null
