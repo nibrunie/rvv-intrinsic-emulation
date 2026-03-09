@@ -1,10 +1,10 @@
 # RIE Generator — RISC-V Vector Intrinsic Emulation Generator
 
-A Python code generator that produces C functions emulating RISC-V vector extension instructions (Zvkb, Zvdot4a8i, Zvzip) using only standard RVV 1.0 intrinsics.
+A Python code generator that produces C functions emulating RISC-V vector extension instructions (Zvkb, Zvdot4a8i, Zvzip, Zvabd) using only standard RVV 1.0 intrinsics.
 
 ## Overview
 
-Some RISC-V vector extensions (e.g. Zvkb for vector crypto bit-manipulation, Zvdot4a8i for packed 8-bit integer dot products, Zvzip for vector interleave/deinterleave) introduce new instructions that may not yet be available on all hardware. This tool automatically generates C emulation functions that implement the same semantics using base RVV 1.0 instructions.
+Some RISC-V vector extensions (e.g. Zvkb for vector crypto bit-manipulation, Zvdot4a8i for packed 8-bit integer dot products, Zvzip for vector interleave/deinterleave, Zvabd for absolute value/difference) introduce new instructions that may not yet be available on all hardware. This tool automatically generates C emulation functions that implement the same semantics using base RVV 1.0 instructions.
 
 ### Supported Extensions
 
@@ -13,6 +13,7 @@ Some RISC-V vector extensions (e.g. Zvkb for vector crypto bit-manipulation, Zvd
 | **Zvkb** | `vror`, `vrol`, `vandn`, `vbrev8`, `vrev8` | Shift/OR decomposition |
 | **Zvdot4a8i** | `vdota4`, `vdota4u`, `vdota4su`, `vdota4us` | Widening multiply + pairwise reduction |
 | **Zvzip** | `vzip`, `vunzipe`, `vunzipo`, `vpaire`, `vpairo` | Widening zero-extend + shift/OR, compress, merge + slide |
+| **Zvabd** | `vabs`, `vabd`, `vabdu` | Conditional negate, max/min subtract |
 
 ### Zvdot4a8i Emulation Details
 
@@ -34,12 +35,20 @@ The Zvzip extension provides vector interleave/deinterleave instructions:
 - **`vunzipe`/`vunzipo`**: build an alternating-bit mask, `vcompress` to extract even/odd elements
 - **`vpaire`/`vpairo`**: `vslideup`/`vslidedown` one source, `vmerge` with alternating mask to pair elements
 
+### Zvabd Emulation Details
+
+The Zvabd extension provides absolute value and absolute difference instructions:
+
+- **`vabs`**: Conditional negate — compare source against zero, negate if negative (`vrsub` + `vmerge`)
+- **`vabd`**: Signed absolute difference — compute `max(a,b) - min(a,b)` using `vmax`/`vmin`/`vsub`
+- **`vabdu`**: Unsigned absolute difference — same approach using `vmaxu`/`vminu`/`vsub`
+
 ### Supported Intrinsic Variants
 
 - **Operand types**: `vv` (vector-vector), `vx` (vector-scalar)
-- **Element widths**: 8, 16, 32, 64-bit unsigned integers (Zvkb, Zvzip); 32-bit signed/unsigned (Zvdot4a8i)
-- **LMUL**: m1, m2, m4, m8 (Zvkb); m1, m2, m4 (Zvdot4a8i, Zvzip — limited by widening)
-- **Policies**: tail undisturbed/agnostic, mask undisturbed/agnostic (Zvkb, Zvzip); tail undisturbed (Zvdot4a8i)
+- **Element widths**: 8, 16, 32, 64-bit unsigned integers (Zvkb, Zvzip, Zvabd); 32-bit signed/unsigned (Zvdot4a8i)
+- **LMUL**: m1, m2, m4, m8 (Zvkb, Zvabd); m1, m2, m4 (Zvdot4a8i, Zvzip — limited by widening)
+- **Policies**: tail undisturbed/agnostic, mask undisturbed/agnostic (Zvkb, Zvzip, Zvabd); tail undisturbed (Zvdot4a8i)
 
 ## Directory Structure
 
@@ -51,7 +60,8 @@ rvv-intrinsic-emulation/
 │   ├── description_helper.py     # Emulation helper utilities (e.g. LMUL splitting)
 │   ├── zvkb_emulation.py         # Zvkb instruction emulation descriptions
 │   ├── zvdot4a8i_emulation.py    # Zvdot4a8i dot product emulation
-│   └── zvzip_emulation.py        # Zvzip interleave/deinterleave emulation
+│   ├── zvzip_emulation.py        # Zvzip interleave/deinterleave emulation
+│   └── zvabd_emulation.py        # Zvabd absolute value/difference emulation
 ├── scripts/
 │   ├── generate_emulation.py     # Standalone CLI script
 │   └── ci_generate_all.sh        # CI smoke-test script
@@ -79,6 +89,7 @@ python3 scripts/generate_emulation.py
 python3 scripts/generate_emulation.py -e zvkb
 python3 scripts/generate_emulation.py -e zvdot4a8i
 python3 scripts/generate_emulation.py -e zvzip
+python3 scripts/generate_emulation.py -e zvabd
 
 # Write to a file with inline attributes
 python3 scripts/generate_emulation.py -e zvkb -o zvkb_emu.h -a static inline
@@ -136,6 +147,7 @@ from rie_generator import (
 from rie_generator.zvkb_emulation import rotate_right, and_not, brev8, rev8
 from rie_generator.zvdot4a8i_emulation import dot4_pipeline
 from rie_generator.zvzip_emulation import vzip_emulation, vunzip_emulation, vpair_emulation
+from rie_generator.zvabd_emulation import vabs_emulation, vabd_emulation, vabdu_emulation
 ```
 
 ## How It Works
@@ -160,6 +172,16 @@ vdota4u(vs2, vs1, vd) =
   sums = vwaddu(high_p, low_p, vl*2)
   high_s, low_s = vnsrl(sums, 32), vnsrl(sums, 0)
   vadd(vadd(high_s, low_s), vd)
+```
+
+**Example — `vabs` (absolute value):**
+```
+vabs(x) = vmerge(x, vrsub(x, 0), vmslt(x, 0))
+```
+
+**Example — `vabd` (absolute difference):**
+```
+vabd(x, y) = vsub(vmax(x, y), vmin(x, y))
 ```
 
 ## Testing
