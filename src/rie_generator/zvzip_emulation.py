@@ -1,3 +1,5 @@
+import re
+
 """
 Zvzip instruction emulation generator.
 
@@ -17,6 +19,7 @@ from .core import (
     EltType,
     LMULType,
     OperationType,
+    generate_intrinsic_name,
     generate_intrinsic_prototype,
     generate_intrinsic_from_operation,
     TailPolicy,
@@ -369,6 +372,7 @@ def generate_zvzip_emulation(
     elt_filter: list = None,
     tail_policy_filter: list = None,
     mask_policy_filter: list = None,
+    label_filter: str = None,
 ):
     """Generate all Zvzip instruction emulations.
 
@@ -499,6 +503,8 @@ def generate_zvzip_emulation(
                         (vpair_odd_prototype, vpair_odd_emulation),
                     ]
 
+                    if label_filter is not None:
+                        zvzip_insns = [(p, e) for p, e in zvzip_insns if re.search(label_filter, generate_intrinsic_name(p))]
                     if prototypes:
                         output.append("// prototypes")
                         for proto, _ in zvzip_insns:

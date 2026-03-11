@@ -1,3 +1,5 @@
+import re
+
 """
 Zvkb (Vector Bit-manipulation) instruction emulation generator.
 
@@ -18,6 +20,7 @@ from .core import (
     EltType,
     LMULType,
     OperationType,
+    generate_intrinsic_name,
     generate_intrinsic_prototype,
     generate_intrinsic_from_operation,
     TailPolicy,
@@ -168,7 +171,8 @@ def rev8(op0: Node, vl: Node, vm: Node = None, dst: Node = None, tail_policy: Ta
 
 def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions: bool,
                              lmul_filter: list = None, elt_filter: list = None,
-                             tail_policy_filter: list = None, mask_policy_filter: list = None):
+                             tail_policy_filter: list = None, mask_policy_filter: list = None,
+                             label_filter: str = None):
     """Generate all Zvkb rotate instruction emulations.
 
     Args:
@@ -329,6 +333,8 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
                         (vuintm_rev8_v_prototype, vuintm_rev8_v_emulation)
                     ]
 
+                    if label_filter is not None:
+                        zvkb_insns = [(p, e) for p, e in zvkb_insns if re.search(label_filter, generate_intrinsic_name(p))]
                     if prototypes:
                         output.append("// prototypes")
                         for prototype in [p for p, e in zvkb_insns]:
