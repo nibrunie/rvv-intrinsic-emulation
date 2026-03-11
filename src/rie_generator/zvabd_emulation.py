@@ -1,3 +1,5 @@
+import re
+
 """
 Zvabd instruction emulation generator.
 
@@ -17,6 +19,7 @@ from .core import (
     EltType,
     LMULType,
     OperationType,
+    generate_intrinsic_name,
     generate_intrinsic_prototype,
     generate_intrinsic_from_operation,
     TailPolicy,
@@ -164,6 +167,7 @@ def generate_zvabd_emulation(
     elt_filter: list = None,
     tail_policy_filter: list = None,
     mask_policy_filter: list = None,
+    label_filter: str = None,
 ):
     """Generate all Zvabd instruction emulations.
 
@@ -306,6 +310,8 @@ def generate_zvabd_emulation(
                         zvabd_insns.append((vwabda_vv_prototype, vwabda_vv_emulation))
                         zvabd_insns.append((vwabdau_vv_prototype, vwabdau_vv_emulation))
 
+                    if label_filter is not None:
+                        zvabd_insns = [(p, e) for p, e in zvabd_insns if re.search(label_filter, generate_intrinsic_name(p))]
                     if prototypes:
                         output.append("// prototypes")
                         for proto, _ in zvabd_insns:
