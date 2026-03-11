@@ -189,7 +189,7 @@ def generate_zvkb_emulation(attributes: list[str], prototypes: bool, definitions
     all_elt_types = [EltType.U8, EltType.U16, EltType.U32, EltType.U64]
     all_lmuls = [LMULType.M1, LMULType.M2, LMULType.M4, LMULType.M8]
     all_tail_policies = [TailPolicy.UNDISTURBED, TailPolicy.AGNOSTIC]
-    all_mask_policies = [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC]
+    all_mask_policies = [MaskPolicy.UNDISTURBED, MaskPolicy.AGNOSTIC, MaskPolicy.UNMASKED]
 
     elt_types = [e for e in all_elt_types if elt_filter is None or e in elt_filter]
     lmuls = [l for l in all_lmuls if lmul_filter is None or l in lmul_filter]
