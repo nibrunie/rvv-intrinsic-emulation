@@ -4,7 +4,7 @@ A Python code generator that produces C functions emulating RISC-V vector extens
 
 ## Overview
 
-Some RISC-V vector extensions (e.g. Zvkb for vector crypto bit-manipulation, Zvdot4a8i for packed 8-bit integer dot products, Zvzip for vector interleave/deinterleave, Zvabd for absolute value/difference) introduce new instructions that may not yet be available on all hardware. This tool automatically generates C emulation functions that implement the same semantics using base RVV 1.0 instructions.
+Some RISC-V vector extensions introduce new instructions that may not yet be available on all hardware. This tool generates C emulation functions that implement the new instructions' semantics using base RVV 1.0 instructions.
 
 ### Supported Extensions
 
