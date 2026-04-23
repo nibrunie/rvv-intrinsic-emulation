@@ -1,3 +1,5 @@
+import re
+
 """
 Zvdot4a8i (Vector 4-element Dot Product of packed 8-bit Integers)
 instruction emulation generator.
@@ -27,6 +29,7 @@ from .core import (
     expand_reinterpret_cast,
     LMULType,
     OperationType,
+    generate_intrinsic_name,
     generate_intrinsic_prototype,
     generate_intrinsic_from_operation,
     TailPolicy,
@@ -200,7 +203,8 @@ VALID_32BIT_LMULS = [LMULType.M1, LMULType.M2, LMULType.M4, LMULType.M8]
 
 
 def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = False, definitions: bool = True,
-                                  lmul_filter: list = None, tail_policy_filter: list = None, mask_policy_filter: list = None):
+                                  lmul_filter: list = None, tail_policy_filter: list = None, mask_policy_filter: list = None,
+                                  label_filter: str = None):
     """Generate all Zvdot4a8i instruction emulations.
 
     Args:
@@ -331,6 +335,8 @@ def generate_zvdot4a8i_emulation(attributes: list[str] = [], prototypes: bool = 
                 tail_policy_str = TailPolicy.to_string(tail_policy)
                 mask_policy_str = MaskPolicy.to_string(mask_policy)
 
+                if label_filter is not None:
+                    zvdot4a8i_insns = [(p, e) for p, e in zvdot4a8i_insns if re.search(label_filter, generate_intrinsic_name(p))]
                 if prototypes:
                     output.append(f"// Zvdot4a8i prototypes (LMUL={lmul_str}), tail_policy={tail_policy_str}, mask_policy={mask_policy_str}")
                     for proto, _ in zvdot4a8i_insns:

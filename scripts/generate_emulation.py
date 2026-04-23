@@ -108,6 +108,12 @@ def main():
         default=None,
         help='Mask policies to generate (default: all). Values: mu (undisturbed), ma (agnostic), um (unmasked)'
     )
+    parser.add_argument(
+        '--label-filter',
+        type=str,
+        default=None,
+        help='Regex pattern to filter generated intrinsics by name (applied to the full __riscv_v* label)'
+    )
     args = parser.parse_args()
     
     # Convert CLI strings to enum values (None means "all")
@@ -120,6 +126,7 @@ def main():
         elt_width_filter = None
     tail_policy_filter = [TAIL_POLICY_MAP[t] for t in args.tail_policy] if args.tail_policy else None
     mask_policy_filter = [MASK_POLICY_MAP[m] for m in args.mask_policy] if args.mask_policy else None
+    label_filter = args.label_filter
 
     output = []
     
@@ -133,6 +140,7 @@ def main():
             elt_filter=elt_width_filter,
             tail_policy_filter=tail_policy_filter,
             mask_policy_filter=mask_policy_filter,
+            label_filter=label_filter,
         ))
     
     if args.extension in ('zvdot4a8i', 'all'):
@@ -144,6 +152,7 @@ def main():
             lmul_filter=lmul_filter,
             tail_policy_filter=tail_policy_filter,
             mask_policy_filter=mask_policy_filter,
+            label_filter=label_filter,
         ))
 
     if args.extension in ('zvzip', 'all'):
@@ -156,6 +165,7 @@ def main():
             elt_filter=elt_width_filter,
             tail_policy_filter=tail_policy_filter,
             mask_policy_filter=mask_policy_filter,
+            label_filter=label_filter,
         ))
 
     if args.extension in ('zvabd', 'all'):
@@ -168,6 +178,7 @@ def main():
             elt_filter=elt_width_filter,
             tail_policy_filter=tail_policy_filter,
             mask_policy_filter=mask_policy_filter,
+            label_filter=label_filter,
         ))
     
     result = "\n".join(output)
