@@ -61,14 +61,58 @@ from .core import (
 # Emulation building blocks
 # ---------------------------------------------------------------------------
 
-def vqwdotau_emulation(vs2: Node, vs1: Node, vd: Node, vl: Node,
+def vqwdota_emulation(vs2: Node, vs1: Node, vd: Node, vl: Node,
                        vm: Node, tail_policy: TailPolicy,
                        mask_policy: MaskPolicy) -> Operation:
-    """Emulate vqwdotau.vv (unsigned 8-bit vs2 dot product, 32-bit accumulation).
+    """Emulate vqwdota.vv (signed or unsigned 8-bit vs2 dot product, 32-bit accumulation).
 
-    TODO: implement emulation using base RVV 1.0 operations.
+        Signs are determined from vs2 and vs1 formats.
+        The intrinsics expose a single API which is mapped to either vqwdotau.vv or vqwdotas.vv based on the element types.
+        For u8 vs u8 => vqwdotau.vv
+        For u8 vs i8 => vqwdotau.vv
+        For i8 vs u8 => vqwdotas.vv
+        For i8 vs i8 => vqwdotas.vv
+
+        vs1 signedness is encoded in vtype.atlfmt (0: unsigned, 1: signed)
+
     """
-    pass
+    prod_format = EltType.widen(vs2.node_format.elt_type)
+    if EltType.is_signed(vs2.node_format.elt_type) and EltType.is_signed(vs1.node_format.elt_type):
+        mul_op = OperationType.WMUL
+        red_op = OperationType.WREDSUM
+    elif EltType.is_unsigned(vs2.node_format.elt_type) and EltType.is_unsigned(vs1.node_format.elt_type):
+        mul_op = OperationType.WMULU
+        red_op = OperationType.WREDSUMU
+    else:
+        mul_op = OperationType.WMULSU
+        red_op = OperationType.WREDSUM
+    # widening product
+    products = Operation(
+        NodeFormatDescriptor(NodeFormatType.VECTOR, prod_format, vs2.node_format.lmul_type),
+        OperationDescriptor(mul_op),
+        # swapping operands to ensure the first operand is signed if at least one of vs2/vs1 are signed
+        vs2 if EltType.is_signed(vs2.node_format.elt_type) else vs1,
+        vs1 if EltType.is_signed(vs2.node_format.elt_type) else vs2,
+        vl,
+    )
+    # widening reduction
+    red_format = vd.node_format
+    reduced = Operation(
+        red_format,
+        OperationDescriptor(red_op),
+        products,
+        vd,
+        vl,
+        vm=vm,
+        dst=vd,
+        tail_policy=tail_policy,
+        mask_policy=mask_policy,
+    )
+
+    return reduced
+    
+    
+    
 
 
 def vqwdotas_emulation(vs2: Node, vs1: Node, vd: Node, vl: Node,
@@ -212,20 +256,20 @@ def generate_zvdota_emulation(
 
                 # --- vqwdotau.vv: unsigned vs2 ---
                 proto_qwdotau = Operation(
-                    vuint32_m1_t, OperationDescriptor(OperationType.QWDOTAU),
+                    vuint32_m1_t, OperationDescriptor(OperationType.QWDOTA),
                     vd_u, vs2_u, vs1_u, vl,
                     dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_qwdotau = vqwdotau_emulation(vs2_u, vs1_u, vd_u, vl, vm, tail_policy, mask_policy)
+                emul_qwdotau = vqwdota_emulation(vs2_u, vs1_u, vd_u, vl, vm, tail_policy, mask_policy)
                 zvqwdota8i_insns.append((proto_qwdotau, emul_qwdotau))
 
                 # --- vqwdotas.vv: signed vs2 ---
                 proto_qwdotas = Operation(
-                    vint32_m1_t, OperationDescriptor(OperationType.QWDOTAS),
+                    vint32_m1_t, OperationDescriptor(OperationType.QWDOTA),
                     vd_s, vs2_s, vs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_qwdotas = vqwdotas_emulation(vs2_s, vs1_s, vd_s, vl, vm, tail_policy, mask_policy)
+                emul_qwdotas = vqwdota_emulation(vs2_s, vs1_s, vd_s, vl, vm, tail_policy, mask_policy)
                 zvqwdota8i_insns.append((proto_qwdotas, emul_qwdotas))
 
                 lmul_str = LMULType.to_string(lmul)
