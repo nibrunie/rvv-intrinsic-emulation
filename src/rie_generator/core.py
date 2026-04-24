@@ -202,6 +202,12 @@ class OperationType(Enum):
     DOT4AU = auto()
     DOT4ASU = auto()
     DOT4AUS = auto()
+    # Zvdota family: scalar dot products
+    QWDOTAU = auto()   # vqwdotau.vv (unsigned vs2, altfmt-selected vs1)
+    QWDOTAS = auto()   # vqwdotas.vv (signed vs2, altfmt-selected vs1)
+    FWDOTA = auto()     # vfwdota.vv (BF16 dot product)
+    FQWDOTA = auto()    # vfqwdota.vv (OFP8 E4M3 vs2)
+    FQWDOTA_ALT = auto() # vfqwdota.alt.vv (OFP8 E5M2 vs2)
     WMUL = auto()
     WMULU = auto()
     WMULSU = auto()
@@ -294,6 +300,16 @@ class OperationType(Enum):
             return "dot4asu"
         elif op_type == OperationType.DOT4AUS:
             return "dot4aus"
+        elif op_type == OperationType.QWDOTAU:
+            return "qwdotau"
+        elif op_type == OperationType.QWDOTAS:
+            return "qwdotas"
+        elif op_type == OperationType.FWDOTA:
+            return "fwdota"
+        elif op_type == OperationType.FQWDOTA:
+            return "fqwdota"
+        elif op_type == OperationType.FQWDOTA_ALT:
+            return "fqwdota_alt"
         elif op_type == OperationType.WMUL:
             return "wmul"
         elif op_type == OperationType.WMULU:
