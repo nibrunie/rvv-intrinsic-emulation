@@ -1,7 +1,26 @@
 from typing import Callable
 from .core import TailPolicy, MaskPolicy, Operation, OperationDescriptor, NodeFormatDescriptor, NodeFormatType, EltType, LMULType, Immediate, OperationType, Node
 
-def emulate_with_split_lmul(result_fmt: NodeFormatDescriptor, operands: list, vl: Node, generator: Callable, generator_extra_args: list, tail_policy: TailPolicy, mask_policy: MaskPolicy, vm: Node, generator_extra_kwargs: dict) -> Operation:
+
+def assemble_split_result(result_fmt, result_hi, result_lo):
+    # CREATE: reassemble two half original LMUL results into full LMUL
+    result_elt = result_fmt.elt_type
+    full_result_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, result_elt, result_fmt.lmul_type)
+    result = Operation(full_result_fmt, OperationDescriptor(OperationType.CREATE),
+                       result_lo, result_hi)
+    return result
+
+def emulate_with_split_lmul(
+        result_fmt: NodeFormatDescriptor,
+        operands: list,
+        vl: Node,
+        generator: Callable,
+        generator_extra_args: list,
+        tail_policy: TailPolicy,
+        mask_policy: MaskPolicy,
+        vm: Node,
+        generator_extra_kwargs: dict,
+        assemble_fn: Callable[[NodeFormatDescriptor, Node, Node], Operation] = assemble_split_result) -> Operation:
     """ generator is expected to follow the Generator API """
     # check that LMUL can actually be split
     # 1. LMUL value must be large enough that half LMUL is still valid for EEW  
@@ -47,12 +66,7 @@ def emulate_with_split_lmul(result_fmt: NodeFormatDescriptor, operands: list, vl
     result_lo = generator(*args_lo, *generator_extra_args, vl=vl_lo, vm=None, tail_policy=TailPolicy.AGNOSTIC, mask_policy=MaskPolicy.UNMASKED, **generator_extra_kwargs)
     result_hi = generator(*args_hi, *generator_extra_args, vl=vl_hi, vm=None, tail_policy=TailPolicy.AGNOSTIC, mask_policy=MaskPolicy.UNMASKED, **generator_extra_kwargs)
 
-    # CREATE: reassemble two half original LMUL results into full LMUL
-    result_elt = result_fmt.elt_type
-    full_result_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR, result_elt, result_fmt.lmul_type)
-    result = Operation(full_result_fmt, OperationDescriptor(OperationType.CREATE),
-                       result_lo, result_hi)
-    return result
+    return assemble_fn(result_fmt, result_hi, result_lo)
 
 def get_vlmax(elt_type: EltType, lmul_type: LMULType) -> Node:
     vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)

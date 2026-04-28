@@ -659,6 +659,12 @@ def generate_intrinsic_name(prototype: Operation) -> str:
     if prototype.op_desc.op_type in [OperationType.ZEXT_VF2]:
         operand_type_descriptor = ""
 
+    if prototype.op_desc.op_type in [OperationType.REDSUM, OperationType.WREDSUM, OperationType.WREDSUMU, OperationType.REDMAX, OperationType.REDMAXU, OperationType.REDMIN, OperationType.REDMINU, 
+                                     OperationType.FREDUSUM, OperationType.FWREDUSUM, OperationType.FREDOSUM, OperationType.FWREDOSUM]:
+        source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
+        intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
+        operand_type_descriptor = "_vs"    
+
     # if prototype.op_desc.op_type in [OperationType.MERGE]:
     #    # vmerge is always a v[vxi]m operation
     #    operand_type_descriptor += "m"

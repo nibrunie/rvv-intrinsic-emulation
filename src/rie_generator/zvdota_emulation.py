@@ -56,14 +56,17 @@ from .core import (
     MaskPolicy,
 )
 
+from .description_helper import emulate_with_split_lmul
+
 
 # ---------------------------------------------------------------------------
 # Emulation building blocks
 # ---------------------------------------------------------------------------
 
 def vqwdota_emulation(vs2: Node, vs1: Node, vd: Node, vl: Node,
-                       vm: Node, tail_policy: TailPolicy,
-                       mask_policy: MaskPolicy) -> Operation:
+                       tail_policy: TailPolicy = TailPolicy.AGNOSTIC,
+                       mask_policy: MaskPolicy = MaskPolicy.UNMASKED,
+                       vm: Node = None) -> Operation:
     """Emulate vqwdota.vv (signed or unsigned 8-bit vs2 dot product, 32-bit accumulation).
 
         Signs are determined from vs2 and vs1 formats.
@@ -76,7 +79,44 @@ def vqwdota_emulation(vs2: Node, vs1: Node, vd: Node, vl: Node,
         vs1 signedness is encoded in vtype.atlfmt (0: unsigned, 1: signed)
 
     """
-    prod_format = EltType.widen(vs2.node_format.elt_type)
+    lmul = vs2.node_format.lmul_type
+    # M8 and M4 splitting: split into two M4 halves, process independently, reassemble
+    if lmul in [LMULType.M4, LMULType.M8]:
+        half_lmul = LMULType.divide(lmul, 2)
+
+        # FIXME: the following helper functions have been copied from description_helper.emulate_with_split_lmul.
+        # they should be factorized
+        idx_fmt = NodeFormatDescriptor(NodeFormatType.IMMEDIATE, EltType.SIZE_T)
+        # Derive M4/M8 formats from each input's own element type
+        def make_half_lmul_format(node):
+            return NodeFormatDescriptor(NodeFormatType.VECTOR, node.node_format.elt_type, half_lmul)
+        def get_halves(node):
+            half_lmul_format = make_half_lmul_format(node)
+            lo = Operation(half_lmul_format, OperationDescriptor(OperationType.GET), node, Immediate(idx_fmt, 0))
+            hi = Operation(half_lmul_format, OperationDescriptor(OperationType.GET), node, Immediate(idx_fmt, 1))
+            return lo, hi
+
+        vl_fmt = NodeFormatDescriptor(NodeFormatType.VECTOR_LENGTH, EltType.SIZE_T, None)
+        vs2_split = get_halves(vs2)
+        vs1_split = get_halves(vs1)
+
+        half_lmul_result_fmt = NodeFormatDescriptor(NodeFormatType.PLACEHOLDER, vs2.node_format.elt_type, half_lmul)
+        placeholder = Immediate(half_lmul_result_fmt, None)
+        vlmax_half_lmul = Operation(vl_fmt, OperationDescriptor(OperationType.VSETVLMAX), placeholder)
+
+        # vl_half = vl / 2
+        vl_lo = Operation(vl_fmt, OperationDescriptor(OperationType.MIN),
+                        vl, vlmax_half_lmul)
+        vl_hi = Operation(vl_fmt, OperationDescriptor(OperationType.SUB),
+                            vl, vl_lo)
+
+        result_lo = vqwdota_emulation(vs2_split[0], vs1_split[0], vd, vl_lo, tail_policy=TailPolicy.AGNOSTIC, mask_policy=MaskPolicy.UNMASKED, vm=None)
+        result_hi = vqwdota_emulation(vs2_split[1], vs1_split[1], result_lo, vl_hi, tail_policy=TailPolicy.AGNOSTIC, mask_policy=MaskPolicy.UNMASKED, vm=None)
+
+        return result_hi
+
+    prod_elt_format = EltType.widen(vs2.node_format.elt_type)
+    prod_format = NodeFormatDescriptor(NodeFormatType.VECTOR, prod_elt_format, LMULType.multiply(vs2.node_format.lmul_type, 2))
     if EltType.is_signed(vs2.node_format.elt_type) and EltType.is_signed(vs1.node_format.elt_type):
         mul_op = OperationType.WMUL
         red_op = OperationType.WREDSUM
@@ -88,13 +128,18 @@ def vqwdota_emulation(vs2: Node, vs1: Node, vd: Node, vl: Node,
         red_op = OperationType.WREDSUM
     # widening product
     products = Operation(
-        NodeFormatDescriptor(NodeFormatType.VECTOR, prod_format, vs2.node_format.lmul_type),
+        prod_format,
         OperationDescriptor(mul_op),
         # swapping operands to ensure the first operand is signed if at least one of vs2/vs1 are signed
         vs2 if EltType.is_signed(vs2.node_format.elt_type) else vs1,
         vs1 if EltType.is_signed(vs2.node_format.elt_type) else vs2,
         vl,
     )
+    # Reduction intrinsincs do not care about the actual mask policy (agnostic/undisturbed),
+    # only masked/unmasked is relevant.
+    reduction_mask_policy = mask_policy
+    if mask_policy != MaskPolicy.UNMASKED:
+        reduction_mask_policy = MaskPolicy.AGNOSTIC
     # widening reduction
     red_format = vd.node_format
     reduced = Operation(
@@ -105,8 +150,8 @@ def vqwdota_emulation(vs2: Node, vs1: Node, vd: Node, vl: Node,
         vl,
         vm=vm,
         dst=vd,
-        tail_policy=tail_policy,
-        mask_policy=mask_policy,
+        tail_policy=TailPolicy.AGNOSTIC,
+        mask_policy=reduction_mask_policy,
     )
 
     return reduced
@@ -240,8 +285,8 @@ def generate_zvdota_emulation(
                 # Accumulator format: 32-bit at EMUL=1
                 vuint32_m1_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, LMULType.M1)
                 vint32_m1_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.S32, LMULType.M1)
-                # Mask type is relative to vd (EMUL=1, EEW=32)
-                vbool32_t = NodeFormatDescriptor(NodeFormatType.MASK, EltType.U32, LMULType.M1)
+                # Mask type is relative to vs1/vs2
+                vbool_t = NodeFormatDescriptor(NodeFormatType.MASK, EltType.U8, lmul)
 
                 # --- Inputs ---
                 vs2_u = Input(vuint8_t, 0, name="vs2")
@@ -250,7 +295,7 @@ def generate_zvdota_emulation(
                 vs1_s = Input(vint8_t, 1, name="vs1")
                 vd_u = Input(vuint32_m1_t, 2, name="vd")
                 vd_s = Input(vint32_m1_t, 2, name="vd")
-                vm = Input(vbool32_t, -2, name="vm")
+                vm = Input(vbool_t, -2, name="vm")
 
                 zvqwdota8i_insns = []
 
@@ -260,7 +305,7 @@ def generate_zvdota_emulation(
                     vd_u, vs2_u, vs1_u, vl,
                     dst=vd_u, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_qwdotau = vqwdota_emulation(vs2_u, vs1_u, vd_u, vl, vm, tail_policy, mask_policy)
+                emul_qwdotau = vqwdota_emulation(vs2_u, vs1_u, vd_u, vl, tail_policy, mask_policy, vm)
                 zvqwdota8i_insns.append((proto_qwdotau, emul_qwdotau))
 
                 # --- vqwdotas.vv: signed vs2 ---
@@ -269,7 +314,7 @@ def generate_zvdota_emulation(
                     vd_s, vs2_s, vs1_s, vl,
                     dst=vd_s, tail_policy=tail_policy, mask_policy=mask_policy, vm=vm
                 )
-                emul_qwdotas = vqwdota_emulation(vs2_s, vs1_s, vd_s, vl, vm, tail_policy, mask_policy)
+                emul_qwdotas = vqwdota_emulation(vs2_s, vs1_s, vd_s, vl, tail_policy, mask_policy, vm)
                 zvqwdota8i_insns.append((proto_qwdotas, emul_qwdotas))
 
                 lmul_str = LMULType.to_string(lmul)
@@ -311,12 +356,12 @@ def generate_zvdota_emulation(
                 # Accumulator format: 32-bit at EMUL=1
                 vuint32_m1_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, LMULType.M1)
                 # Mask type relative to vd (EMUL=1, EEW=32)
-                vbool32_t = NodeFormatDescriptor(NodeFormatType.MASK, EltType.U32, LMULType.M1)
+                vbool_t = NodeFormatDescriptor(NodeFormatType.MASK, EltType.U16, lmul)
 
                 vs2 = Input(vuint16_t, 0, name="vs2")
                 vs1 = Input(vuint16_t, 1, name="vs1")
                 vd = Input(vuint32_m1_t, 2, name="vd")
-                vm = Input(vbool32_t, -2, name="vm")
+                vm = Input(vbool_t, -2, name="vm")
 
                 zvfwdota16bf_insns = []
 
@@ -366,13 +411,13 @@ def generate_zvdota_emulation(
                 vuint8_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U8, lmul)
                 # Accumulator format: 32-bit at EMUL=1
                 vuint32_m1_t = NodeFormatDescriptor(NodeFormatType.VECTOR, EltType.U32, LMULType.M1)
-                # Mask type relative to vd (EMUL=1, EEW=32)
-                vbool32_t = NodeFormatDescriptor(NodeFormatType.MASK, EltType.U32, LMULType.M1)
+                # Mask type relative to vs1/vs2
+                vbool_t = NodeFormatDescriptor(NodeFormatType.MASK, EltType.U8, lmul)
 
                 vs2 = Input(vuint8_t, 0, name="vs2")
                 vs1 = Input(vuint8_t, 1, name="vs1")
                 vd = Input(vuint32_m1_t, 2, name="vd")
-                vm = Input(vbool32_t, -2, name="vm")
+                vm = Input(vbool_t, -2, name="vm")
 
                 zvfqwdota8f_insns = []
 
