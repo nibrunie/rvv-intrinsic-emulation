@@ -27,6 +27,10 @@ class EltType(Enum):
         return elt_type in [EltType.S8, EltType.S16, EltType.S32, EltType.S64]
 
     @staticmethod
+    def is_unsigned(elt_type: 'EltType') -> bool:
+        return elt_type in [EltType.U8, EltType.U16, EltType.U32, EltType.U64]
+
+    @staticmethod
     def inverse_sign(elt_type: 'EltType') -> 'EltType':
         if elt_type == EltType.U8:
             return EltType.S8
@@ -202,6 +206,11 @@ class OperationType(Enum):
     DOT4AU = auto()
     DOT4ASU = auto()
     DOT4AUS = auto()
+    # Zvdota family: scalar dot products
+    QWDOTA = auto()   # vqwdota(u/s).vv
+    FWDOTA = auto()     # vfwdota.vv (BF16 dot product)
+    FQWDOTA = auto()    # vfqwdota.vv (OFP8 E4M3 vs2)
+    FQWDOTA_ALT = auto() # vfqwdota.alt.vv (OFP8 E5M2 vs2)
     WMUL = auto()
     WMULU = auto()
     WMULSU = auto()
@@ -238,6 +247,21 @@ class OperationType(Enum):
     ABDU = auto()
     WABDA = auto()
     WABDAU = auto()
+
+    # reductions
+    REDSUM = auto()
+    WREDSUM = auto()
+    WREDSUMU = auto()
+
+    REDMIN = auto()
+    REDMINU = auto()
+    REDMAX = auto()
+    REDMAXU = auto()
+
+    FREDUSUM = auto()
+    FWREDUSUM = auto()
+    FREDOSUM = auto()
+    FWREDOSUM = auto()
 
     VSETVLMAX = auto()
 
@@ -294,6 +318,14 @@ class OperationType(Enum):
             return "dot4asu"
         elif op_type == OperationType.DOT4AUS:
             return "dot4aus"
+        elif op_type == OperationType.QWDOTA:
+            return "qwdota"
+        elif op_type == OperationType.FWDOTA:
+            return "fwdota"
+        elif op_type == OperationType.FQWDOTA:
+            return "fqwdota"
+        elif op_type == OperationType.FQWDOTA_ALT:
+            return "fqwdota_alt"
         elif op_type == OperationType.WMUL:
             return "wmul"
         elif op_type == OperationType.WMULU:
@@ -373,6 +405,28 @@ class OperationType(Enum):
         elif op_type == OperationType.GEU:
             # assume unsigned integer comparison
             return "msgeu"
+        elif op_type == OperationType.REDSUM:
+            return "redsum"
+        elif op_type == OperationType.WREDSUM:
+            return "wredsum"
+        elif op_type == OperationType.WREDSUMU:
+            return "wredsumu"
+        elif op_type == OperationType.REDMIN:
+            return "redmin"
+        elif op_type == OperationType.REDMINU:
+            return "redminu"
+        elif op_type == OperationType.REDMAX:
+            return "redmax"
+        elif op_type == OperationType.REDMAXU:
+            return "redmaxu"
+        elif op_type == OperationType.FREDUSUM:
+            return "fredusum"
+        elif op_type == OperationType.FWREDUSUM:
+            return "fwredusum"
+        elif op_type == OperationType.FREDOSUM:
+            return "fredosum"
+        elif op_type == OperationType.FWREDOSUM:
+            return "fwredosum"
         else:
             raise ValueError(f"Invalid operation type: {op_type}")
 
@@ -591,7 +645,12 @@ def generate_intrinsic_name(prototype: Operation) -> str:
         intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
         operand_type_descriptor = "_v"
 
-    # Some intrinsics (comparison), require the the source type to be displayed in the name
+    if prototype.op_desc.op_type in [OperationType.QWDOTA]:
+        source_type_tags = [generate_intrinsic_type_tag(arg.node_format) for arg in prototype.args[1:3]]
+        intrinsic_type_tag = f"{'_'.join(source_type_tags)}_{intrinsic_type_tag}"
+        operand_type_descriptor = "_vv"
+
+    # Some intrinsics (comparison), require the source type to be displayed in the name
     # suffix, but also require the full type descriptor to be used for the destination
     if prototype.op_desc.op_type in [OperationType.LT, OperationType.LE, OperationType.GT, OperationType.GE, OperationType.GEU]:
         source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
@@ -599,6 +658,12 @@ def generate_intrinsic_name(prototype: Operation) -> str:
 
     if prototype.op_desc.op_type in [OperationType.ZEXT_VF2]:
         operand_type_descriptor = ""
+
+    if prototype.op_desc.op_type in [OperationType.REDSUM, OperationType.WREDSUM, OperationType.WREDSUMU, OperationType.REDMAX, OperationType.REDMAXU, OperationType.REDMIN, OperationType.REDMINU, 
+                                     OperationType.FREDUSUM, OperationType.FWREDUSUM, OperationType.FREDOSUM, OperationType.FWREDOSUM]:
+        source_type_tag = generate_intrinsic_type_tag(prototype.args[0].node_format)
+        intrinsic_type_tag = f"{source_type_tag}_{intrinsic_type_tag}"
+        operand_type_descriptor = "_vs"    
 
     # if prototype.op_desc.op_type in [OperationType.MERGE]:
     #    # vmerge is always a v[vxi]m operation
